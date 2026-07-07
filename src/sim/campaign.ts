@@ -6,6 +6,7 @@
 import { makeRng, type Rng } from './rng.ts';
 import { ERAS, type Era } from './era.ts';
 import { addGrudge, generateEnemyOfficers, generateOfficers, observe, shortName } from './officer.ts';
+import { maybePersonalEvent, applyPersonalChoice, personalNextOperation } from './personal.ts';
 import type {
   CampaignEvent, CampaignState, CouncilProposal, Engagement, EnemyOfficer,
   EraId, Officer, OutcomeKind, Report, Weather,
@@ -51,6 +52,10 @@ export function newCampaign(era: EraId, seed: number): CampaignState {
     enemyName: e.enemyName,
     placeName: place,
     nextReportId: 1,
+    // placeholder until the player chooses a household on the setup screen
+    personal: {
+      situation: 'alone', spouseBond: 0, children: [], resolve: 60, arcFlags: [],
+    },
   };
   addLog(c, 'event', e.strategicOrder(place, e.rulerName), true);
   addLog(c, 'logistics', `The army musters: some ${totalMuster()} men under arms, ${officers.length} officers of note, and food for roughly twelve days.`);
@@ -159,9 +164,13 @@ export function resolveMarchDay(c: CampaignState, choices: MarchChoices): void {
     c.pendingEngagement = makeEngagement(c, vanguardKey, 'bridge', rng);
   } else if (c.distance === 1 && !c.engagementsDone.includes(forageKey)) {
     c.pendingEngagement = makeEngagement(c, forageKey, 'forage', rng);
-  } else if (!c.pendingEvent && rng.chance(0.65)) {
-    // A day event, some days (never stacked on an engagement).
-    c.pendingEvent = pickEvent(c, rng);
+  } else if (!c.pendingEvent) {
+    // The day's evening belongs to either the army or the man. The
+    // personal life gets first claim roughly every other quiet day.
+    const personalFirst = rng.chance(0.5);
+    if (personalFirst) maybePersonalEvent(c, rng.fork(87));
+    if (!c.pendingEvent && rng.chance(0.65)) c.pendingEvent = pickEvent(c, rng);
+    if (!c.pendingEvent && !personalFirst) maybePersonalEvent(c, rng.fork(88));
   }
 
   c.day += 1;
@@ -420,6 +429,7 @@ function pickEvent(c: CampaignState, rng: Rng): CampaignEvent {
 }
 
 export function resolveEventChoice(c: CampaignState, apply: string): void {
+  if (applyPersonalChoice(c, apply)) return;
   const [id, idxStr] = apply.split(':');
   const def = EVENTS.find((e) => e.id === id);
   if (!def) return;
@@ -723,6 +733,12 @@ export function resolveChallenge(c: CampaignState, answer: string /* officerId o
     observe(fighter, 'You have seen him kill a champion in single combat.');
     addGrudge(fighter, { enemyOfficerId: champion.id, enemyName: champion.name, kind: 'triumph', note: `Killed ${champion.name} between the lines.` });
     addLog(c, 'event', `They meet between the armies. It is short. ${who} comes back with ${champion.name}'s horse and a roar goes down your whole line that must be heard in their camp. Whoever commands that man's men tomorrow will do it with a hole where their captain was.`, true);
+    // if that was the man from your campaign book, the account closes here
+    if (c.personal.vengeance && !c.personal.vengeance.settled && c.personal.vengeance.enemyOfficerId === champion.id) {
+      c.personal.vengeance.settled = true;
+      c.personal.resolve = clamp(c.personal.resolve + 14);
+      addLog(c, 'personal', `${champion.name}. That name, out of all of them. You watch ${shortName(fighter.name)} lead the horse back through the cheering and you stand very still, closing a page.`, true);
+    }
   } else {
     const dies = rng.chance(0.45);
     c.morale = clamp(c.morale - 8);
@@ -873,4 +889,5 @@ export function nextOperation(c: CampaignState, survivors: Record<string, number
   c.scoutedWide = undefined;
   addLog(c, 'event', `${era.strategicOrder(c.placeName, c.rulerName)}`, true);
   addLog(c, 'logistics', `The army takes the road again — thinner, harder, and carrying its memories with it. Operation ${c.operation} of the war begins.`);
+  personalNextOperation(c);
 }

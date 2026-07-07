@@ -204,7 +204,7 @@ export interface TerrainFeature {
 
 export type ReportKind =
   | 'order' | 'messenger' | 'officer' | 'combat' | 'scout'
-  | 'morale' | 'logistics' | 'event' | 'command';
+  | 'morale' | 'logistics' | 'event' | 'command' | 'personal';
 
 export interface Report {
   id: number;
@@ -302,12 +302,53 @@ export interface CampaignEvent {
 export type Phase =
   | 'title'
   | 'era-select'
+  | 'household'
   | 'briefing'
   | 'march'
   | 'camp'
   | 'deployment'
   | 'battle'
   | 'after-action';
+
+// ---------------------------------------------------------------- personal
+
+// The general is a person. What he carries in his chest arrives on the
+// battlefield in the clarity of his orders.
+
+export interface Child {
+  name: string;
+  age: number;
+}
+
+export interface Romance {
+  name: string;
+  origin: string;    // how you met, in prose
+  home: string;      // her village
+  stage: number;     // 0 = met, 1 = drawn in, 2 = bound, -1 = ended
+  affair: boolean;   // true if the general is married
+  bond: number;      // 0..100
+  lost?: boolean;    // her village burned, her fate with it
+}
+
+export type HouseholdChoice = 'home' | 'camp' | 'alone';
+
+export interface PersonalState {
+  situation: HouseholdChoice;
+  spouseName?: string;
+  spouseBond: number; // 0..100 (meaningless if unmarried)
+  children: Child[];
+  romance?: Romance;
+  // The load-bearing number: the general's inner steadiness. It feeds
+  // directly into the clarity of every order he writes.
+  resolve: number; // 0..100
+  // A personal score against a named enemy officer. The general keeps
+  // books too.
+  vengeance?: { enemyOfficerId: string; enemyName: string; note: string; settled?: boolean };
+  scandal?: boolean;          // the affair became camp gossip
+  familyCaptured?: boolean;   // the worst outcome of bringing them
+  wroteHome?: 'honest' | 'heroic' | 'silent'; // this operation's letter
+  arcFlags: string[];         // which personal story beats have fired
+}
 
 // A vanguard action on the march: a small detachment fight, led by one
 // officer of your choosing, against a named enemy officer. This is where
@@ -374,6 +415,7 @@ export interface CampaignState {
   unitStrength?: Record<string, number>;
   veteranBlood?: number; // 0..100 how blooded the army is (training bonus)
   warOver?: 'dismissed' | 'triumph'; // set when the war ends
+  personal: PersonalState;
 }
 
 export interface GameState {
@@ -413,4 +455,7 @@ export interface AfterAction {
   warEndText?: string;
   commendedId?: string;    // set when the player hands down judgment
   censuredId?: string;
+  personalNotes: string[]; // what this battle did to the man, not the general
+  canWriteHome: boolean;
+  letterSent?: 'honest' | 'heroic' | 'silent';
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ERAS } from '../sim/era.ts';
 import { shortName } from '../sim/officer.ts';
+import { resolveWord } from '../sim/personal.ts';
 import type { CampaignState } from '../sim/types.ts';
 import type { EngagementApproach, MarchChoices } from '../sim/campaign.ts';
 import { actions } from '../store.ts';
@@ -104,6 +105,7 @@ export function CampaignScreen({ campaign }: { campaign: CampaignState }) {
         </div>
 
         <div className="col-side">
+          <HearthPanel campaign={campaign} />
           <div className="panel">
             <h3>Dispatches &amp; The March</h3>
             <ReportLog reports={campaign.log} formatWhen={(d) => `Day ${d}`} />
@@ -191,6 +193,59 @@ function EngagementModal({ campaign }: { campaign: CampaignState }) {
       </div>
     </div>
   );
+}
+
+// The man inside the armor. Everything here is prose; the number it all
+// feeds (resolve) reaches the battlefield as the clarity of your orders.
+function HearthPanel({ campaign }: { campaign: CampaignState }) {
+  const p = campaign.personal;
+  const lines: { text: string; tone?: 'warm' | 'cold' }[] = [];
+  if (p.situation === 'home' && p.spouseName) {
+    lines.push({
+      text: `${p.spouseName} keeps the household${p.children.length ? `, with ${p.children.map((c) => c.name).join(' and ')}` : ''}. ${bondWord(p.spouseBond)}`,
+    });
+  } else if (p.situation === 'camp' && p.spouseName) {
+    lines.push({
+      text: `${p.spouseName}${p.children.length ? ` and the children` : ''} travel with the baggage train. ${bondWord(p.spouseBond)}`,
+    });
+  } else if (p.situation === 'alone') {
+    lines.push({ text: 'No one waits behind you. The court finds this suspicious; you find it quiet.' });
+  }
+  if (p.familyCaptured) {
+    lines.push({ text: 'Your family is in enemy hands. Every decision is written in two ledgers now.', tone: 'cold' });
+  }
+  if (p.romance && p.romance.stage >= 0) {
+    lines.push({
+      text: p.romance.stage === 2
+        ? `${p.romance.name} travels with the army${p.romance.affair ? ' — and the army has eyes' : ', accounts book in hand'}.`
+        : `You keep thinking about ${p.romance.name}, of ${p.romance.home}. This is almost certainly nothing.`,
+      tone: 'warm',
+    });
+  }
+  if (p.scandal) {
+    lines.push({ text: 'The camp knows about the affair. Your stricter officers salute a half-second short.', tone: 'cold' });
+  }
+  if (p.vengeance && !p.vengeance.settled) {
+    lines.push({ text: `There is a name written alone at the bottom of a page in your campaign book: ${p.vengeance.enemyName}.`, tone: 'cold' });
+  }
+  return (
+    <div className="panel">
+      <h3>The Hearth</h3>
+      {lines.map((l, i) => (
+        <p key={i} style={{ margin: '4px 0', fontSize: 13, color: l.tone === 'cold' ? '#d08070' : l.tone === 'warm' ? 'var(--gold)' : undefined }}>
+          {l.text}
+        </p>
+      ))}
+      <p className="hint" style={{ marginTop: 8 }}>{resolveWord(p)}</p>
+    </div>
+  );
+}
+
+function bondWord(bond: number): string {
+  if (bond > 72) return 'Her letters are the best hour of your week.';
+  if (bond > 50) return 'Things between you are as they have always been, which is good.';
+  if (bond > 30) return 'Her letters have grown shorter. So, you notice, have yours.';
+  return 'What is between you now is mostly formality, conducted at range.';
 }
 
 function Choice<T extends string>({ label, value, onChange, options }: {

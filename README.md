@@ -75,6 +75,39 @@ The second pass adds the systems that make officers worth *learning*
   on: same officers, same grudges, replacements for the dead, a ruler's
   patience meter, and a war won or a command lost in about three operations.
 
+## The personal life
+
+The third pass makes the general a person, on the theory that everything a
+commander carries in his chest arrives on the battlefield in the clarity of
+his orders. The bridge is **Resolve** — one hidden number for the steadiness
+of the hand that writes the dispatches. Grief, worry, scandal, and longing
+push it down; love, good letters, and settled scores push it up; and every
+order you issue inherits it as a clarity modifier before any officer ever
+misreads it.
+
+- **Your household** — chosen at campaign start: family waiting at home
+  (letters, court politics fought by proxy, a sick child four days' ride
+  away), family traveling with the baggage train (comfort, and a spouse who
+  reads your officers better than the dispatches do — but they sleep a mile
+  from the enemy), or marching alone (freedom, court suspicion, and a heart
+  with an unguarded flank).
+- **The spouse as intelligence asset** — if she travels with you, she
+  watches your officers across suppers and fires, and her readings pierce
+  reputation: "His hands shake at supper when the scouts report. Not the
+  wine. I watched."
+- **A campaign romance** — a widow with a ledger and better arithmetic than
+  your quartermaster. Pursue it or ride on; openly if unmarried, as an
+  affair with scandal mechanics if not. And war is war: her village can
+  burn, and the *general* gains a vengeance entry against the named enemy
+  officer who burned it — a page in your campaign book that only his death
+  closes.
+- **The family in the sacked camp** — if the enemy reaches your baggage and
+  your family is in it, the battle stops being a map for one white moment;
+  lose the battle too, and they are prisoners, and the next operation is
+  fought in two ledgers.
+- **The letter home** — after every battle: the truth, the version with
+  trumpets, or silence. Each is read, and each is answered in kind.
+
 ## Design notes
 
 - **Officers are the game.** Every formation is commanded by an officer with

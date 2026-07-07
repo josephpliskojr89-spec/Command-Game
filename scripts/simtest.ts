@@ -10,10 +10,14 @@ import {
 } from '../src/sim/campaign.ts';
 import { setupBattle, battleTick, issuePlayerOrder, visibleReports, lossFraction, soundSignal, applyDeploymentPolitics } from '../src/sim/battle.ts';
 import { buildAfterAction } from '../src/sim/aar.ts';
+import { initPersonal, writeHome } from '../src/sim/personal.ts';
 import { FORMATIONS } from '../src/sim/era.ts';
 
 const seed = Number(process.argv[2] ?? 12345);
 const campaign = newCampaign('medieval', seed);
+const household = (['home', 'camp', 'alone'] as const)[seed % 3];
+initPersonal(campaign, household);
+console.log(`— household: ${household}, resolve ${campaign.personal.resolve}`);
 
 // march to contact
 let guard = 0;
@@ -25,10 +29,12 @@ while (campaign.distance > 0 && guard++ < 20) {
     resolveEngagement(campaign, officer.id, 'storm');
   }
   if (campaign.pendingEvent) {
-    resolveEventChoice(campaign, campaign.pendingEvent.options[0].apply);
+    const ev = campaign.pendingEvent;
+    if (ev.id.startsWith('p-')) console.log(`— personal event: ${ev.title}`);
+    resolveEventChoice(campaign, ev.options[ev.id.startsWith('p-') ? ev.options.length - 1 : 0].apply);
   }
 }
-console.log(`— marched ${campaign.day - 1} days; morale ${campaign.morale}, fatigue ${campaign.fatigue}, intel ${campaign.intel}`);
+console.log(`— marched ${campaign.day - 1} days; morale ${campaign.morale}, fatigue ${campaign.fatigue}, intel ${campaign.intel}, resolve ${campaign.personal.resolve}`);
 const grudged = campaign.officers.filter((o) => o.grudges.length);
 console.log(`— grudges after march: ${grudged.map((o) => `${o.name}: ${o.grudges.map((g) => g.kind + ' vs ' + g.enemyName).join('; ')}`).join(' | ') || 'none'}`);
 
@@ -97,6 +103,9 @@ for (const p of aar.chronicle) console.log(p + '\n');
 for (const v of aar.officerVerdicts) console.log(`  [${v.grade}] ${v.verdict}`);
 if (aar.grudgeNotes.length) console.log('\nGrudges: ' + aar.grudgeNotes.join(' / '));
 if (aar.casualtyNotes.length) console.log('Officer casualties: ' + aar.casualtyNotes.join(' / '));
+if (aar.personalNotes.length) console.log('Personal: ' + aar.personalNotes.join(' / '));
+if (aar.canWriteHome) console.log('Letter home: ' + writeHome(campaign, 'honest', aar.outcome));
+console.log(`Resolve after battle: ${campaign.personal.resolve}`);
 console.log('\nRuler: ' + aar.rulerJudgment);
 console.log(`Patience: ${campaign.rulerPatience}, war over: ${campaign.warOver ?? 'no'}, can march on: ${aar.canMarchOn}`);
 

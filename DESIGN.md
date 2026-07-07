@@ -134,6 +134,36 @@ meter — win the war in about three operations, or be relieved of command.
 
 ---
 
+## Implemented systems (third pass: the personal life)
+
+Design rule: everything personal reaches the battlefield through **one
+number** — *resolve*, the steadiness of the hand that writes the orders —
+plus the choices it pressures. Resolve feeds `orderClarity` directly
+(roughly ±12), so a grieving or scandal-hounded general genuinely issues
+muddier orders, which his officers then misread in all the usual ways.
+Compounding friction: the officer never gets a clean order from a broken
+man.
+
+- **Household choice** at campaign start (family home / family in the
+  baggage train / unmarried), with era-flavored spouses, children, and
+  villages.
+- **Home arc**: the fever letter, court whispers fought by proxy through
+  the spouse, the post-battle letter home (honest / heroic / silent —
+  each with bond, patience, and resolve consequences).
+- **Camp arc**: fever in the baggage train (halt the army for one small
+  child, or keep two vigils), spouse counsel (a *true* officer observation
+  per operation, targeting the most misjudged man — reputation-piercing
+  intelligence), and family-in-the-sacked-camp consequences up to capture
+  and ransom.
+- **Romance arc**: meeting (a requisition dispute lost on purpose),
+  escalation (flour as pretext), binding (openly, or as an affair with a
+  discovery/scandal mechanic that costs officer trust, spouse bond, and
+  court standing), and loss — her village burned by a named enemy
+  officer, giving the GENERAL a vengeance entry that mirrors his officers'
+  grudge ledger, settled only by that man's death (in battle or a duel).
+- **Unmarried pressure**: the crown proposes a marriage alliance;
+  patience for freedom, or freedom for patience.
+
 ## Roadmap (advisor proposals not yet implemented)
 
 Ranked roughly by (impact on the command fantasy) / (cost):

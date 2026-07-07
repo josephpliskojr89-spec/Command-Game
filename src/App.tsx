@@ -1,6 +1,7 @@
 import { useGame } from './store.ts';
 import { ERAS } from './sim/era.ts';
 import { TitleScreen, EraSelectScreen } from './ui/TitleEraScreens.tsx';
+import { HouseholdScreen } from './ui/HouseholdScreen.tsx';
 import { CampaignScreen } from './ui/CampaignScreen.tsx';
 import { CampScreen } from './ui/CampScreen.tsx';
 import { DeploymentScreen } from './ui/DeploymentScreen.tsx';
@@ -24,6 +25,7 @@ export function App() {
       </div>
       {game.phase === 'title' && <TitleScreen />}
       {game.phase === 'era-select' && <EraSelectScreen />}
+      {game.phase === 'household' && game.campaign && <HouseholdScreen campaign={game.campaign} />}
       {game.phase === 'march' && game.campaign && <CampaignScreen campaign={game.campaign} />}
       {game.phase === 'camp' && game.campaign && <CampScreen campaign={game.campaign} />}
       {game.phase === 'deployment' && game.campaign && game.battle && game.assignments && (

@@ -8,6 +8,10 @@ import {
   addGrudge, interpretOrder, observe, officerAutonomy, orderClarity,
   shortName, orderVerb, type InterpretContext,
 } from './officer.ts';
+import {
+  personalBattleReports, personalCampSacked, personalVengeanceCheck,
+  resolveClarityMod,
+} from './personal.ts';
 import type {
   ActiveOrder, BattleState, CampaignState, Grudge, KnownEnemy, Messenger,
   Officer, OrderType, PlayerOrder, Report, TerrainFeature, Unit, UnitClass,
@@ -273,6 +277,9 @@ export function setupBattle(
   if (campaign.weather === 'heat') report(bs, 'scout', 0, bs.hqPos, 'The sun is already brutal. Whoever stands in armor longest today loses something for it.');
   if (hungry) report(bs, 'logistics', 0, bs.hqPos, 'The men went into line on empty stomachs. It shows in the way they stand.', true);
   if (campaign.cavHint) report(bs, 'scout', 0, bs.hqPos, `The council's word stands on your map: the enemy horse is expected on your ${campaign.cavHint}.`);
+  for (const r of personalBattleReports(campaign)) {
+    bs.reports.push({ ...r, id: bs.nextId++ });
+  }
   return bs;
 }
 
@@ -344,10 +351,11 @@ export function issuePlayerOrder(
 ): void {
   const u = unit(bs, unitId);
   if (!u || u.side !== 'friend' || u.routed) return;
+  // The clarity of an order is the clarity of the mind that wrote it.
   const po: PlayerOrder = {
     id: `po-${bs.nextId++}`,
     unitId, type, target, targetUnitId, urgency,
-    clarity: orderClarity(type, urgency, bs.weather),
+    clarity: Math.max(15, Math.min(98, orderClarity(type, urgency, bs.weather) + resolveClarityMod(campaign.personal))),
     issuedTick: bs.tick,
   };
 
@@ -526,6 +534,12 @@ function officerCasualties(bs: BattleState, campaign: CampaignState, rng: Rng) {
       u.morale = clamp(u.morale - 14);
       report(bs, 'combat', bs.tick, u, `A shout goes down the enemy line — ${foe.name}'s banner has fallen. Their ${u.name.split('—').pop()?.trim() ?? 'formation'} is suddenly a crowd with weapons.`, true);
       event(bs, 'enemy-officer-killed', `${foe.name} fell in the press.`, undefined, u.id);
+      // the general's own ledger
+      const vengeanceLine = personalVengeanceCheck(campaign, foe.id);
+      if (vengeanceLine) {
+        report(bs, 'personal', bs.tick, playerPosition(bs), vengeanceLine, true, true);
+        event(bs, 'vengeance-settled', `The general's private account with ${foe.name} was closed on this field.`);
+      }
       // whoever was fighting him claims the deed
       const killer = u.engagedWith ? unit(bs, u.engagedWith) : undefined;
       const killerOfficer = killer?.officerId ? campaign.officers.find((o) => o.id === killer.officerId) : undefined;
@@ -609,6 +623,12 @@ function campThreat(bs: BattleState, campaign: CampaignState, rng: Rng) {
       : 'The enemy is IN the camp. Your camp followers are fleeing down the road, and every man in the line can hear the baggage being taken apart behind him.',
     true);
   event(bs, 'camp-threatened', 'The enemy reached the army\'s camp and baggage.');
+  // and if the general's family is in that camp, the war just became personal
+  const personalLine = personalCampSacked(campaign);
+  if (personalLine) {
+    report(bs, 'personal', bs.tick, playerPosition(bs), personalLine, true, true);
+    event(bs, 'family-peril', "The general's family was in the threatened camp.");
+  }
 }
 
 // ---------------------------------------------------------------- messengers

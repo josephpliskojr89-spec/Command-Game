@@ -7,6 +7,7 @@ import { ERAS } from './era.ts';
 import { shortName } from './officer.ts';
 import { lossFraction } from './battle.ts';
 import { applyOutcomeToWar } from './campaign.ts';
+import { personalAfterBattle } from './personal.ts';
 import type {
   AfterAction, BattleState, CampaignState, Officer, OfficerVerdict, OutcomeKind,
 } from './types.ts';
@@ -103,6 +104,9 @@ export function buildAfterAction(bs: BattleState, c: CampaignState): AfterAction
     }
   }
 
+  // ---- the man inside the general ----------------------------------------
+  const personalNotes = personalAfterBattle(c, outcome, bs.campSacked === true);
+
   // ---- the war beyond this field ----------------------------------------
   applyOutcomeToWar(c, outcome);
   const { judgment, strategic } = rulerVerdict(outcome, c, fLost, fStart);
@@ -130,6 +134,8 @@ export function buildAfterAction(bs: BattleState, c: CampaignState): AfterAction
     canMarchOn: !c.warOver,
     warEnd: c.warOver,
     warEndText,
+    personalNotes,
+    canWriteHome: c.personal.situation === 'home' && !c.warOver,
   };
 }
 

@@ -33,6 +33,11 @@ export interface Era {
   strategicOrder: (place: string, ruler: string) => string;
   campName: string;
   messengerWord: string;
+  // the personal life
+  womenNames: string[];   // spouses and campaign romances
+  childNames: string[];
+  villageNames: string[]; // where a woman might be from
+  homeWord: string;       // what "home" is called: estate, hall, manor...
 }
 
 // One army skeleton shared by all eras. Six formations, six commands.
@@ -86,6 +91,10 @@ export const ERAS: Record<EraId, Era> = {
       `By decree of ${ruler}: the Samnites have cut the road at ${place} and burned two allied towns. You will march, bring them to battle, and break them. A triumph awaits success. Exile awaits the alternative.`,
     campName: 'the marching camp',
     messengerWord: 'rider',
+    womenNames: ['Claudia', 'Fulvia', 'Aemilia', 'Livia', 'Tertia', 'Servilia'],
+    childNames: ['Gaius', 'Lucius', 'Publius', 'Cornelia', 'Tullia'],
+    villageNames: ['Casinum', 'Aquilonia', 'the hill village of Trebula'],
+    homeWord: 'your house on the Caelian',
   },
   saxon: {
     id: 'saxon',
@@ -126,6 +135,10 @@ export const ERAS: Record<EraId, Era> = {
       `${ruler} commands: the Danes have sacked three villages and drive stolen cattle toward ${place}. Catch them, break them, and recover what was taken. If they reach their ships unfought, the shire will not forgive it — and neither will the King.`,
     campName: 'the night camp',
     messengerWord: 'rider',
+    womenNames: ['Aelfgifu', 'Eadgyth', 'Wulfrun', 'Godgifu', 'Leofflaed', 'Mildrith'],
+    childNames: ['Eadmund', 'Aelfric', 'Aethelflaed', 'Wulfstan', 'Eadgifu'],
+    villageNames: ['Cealcford', 'Buckelanbyrig', 'the mill village at Otterburne'],
+    homeWord: 'your hall in the shire',
   },
   viking: {
     id: 'viking',
@@ -166,6 +179,10 @@ export const ERAS: Record<EraId, Era> = {
       `The word of ${ruler}: the Saxons gather an army at ${place} to pen you against the river. Strike them before they are ready. Win, and the whole valley pays tribute. Lose, and the ships go home half-crewed.`,
     campName: 'the shore camp',
     messengerWord: 'runner',
+    womenNames: ['Sigrid', 'Astrid', 'Thyra', 'Gunnhild', 'Ragnhild', 'Freydis'],
+    childNames: ['Leif', 'Einar', 'Thora', 'Gudrun', 'Snorri'],
+    villageNames: ['the fishing steads at Meretun', 'Wealdham', 'the river hamlet of Sceapige'],
+    homeWord: 'your steading across the sea',
   },
   norman: {
     id: 'norman',
@@ -207,6 +224,10 @@ export const ERAS: Record<EraId, Era> = {
       `${ruler} is displeased. Rebels muster at ${place} and burn the King’s manors. You will march, break them, and hang enough of them that the lesson keeps. The Duke rewards speed. He does not reward excuses.`,
     campName: 'the palisade camp',
     messengerWord: 'rider',
+    womenNames: ['Adeliza', 'Emma', 'Mathilde', 'Isabelle', 'Constance', 'Aveline'],
+    childNames: ['Robert', 'Guillaume', 'Adela', 'Richard', 'Mahaut'],
+    villageNames: ['Fenstanton', 'the eel-fishers\u2019 village at Welle', 'Bourne'],
+    homeWord: 'your manor in Normandy',
   },
   medieval: {
     id: 'medieval',
@@ -248,6 +269,10 @@ export const ERAS: Record<EraId, Era> = {
       `In the name of ${ruler}: Count Amaury has crossed the border with fire and banners and moves on the royal city through ${place}. You will stop him there. The King reminds you, with affection, that marshals who lose royal armies rarely remain marshals. Or heads.`,
     campName: 'the war camp',
     messengerWord: 'herald',
+    womenNames: ['Eleanor', 'Isabella', 'Joan', 'Margaret', 'Alys', 'Cecily'],
+    childNames: ['Henry', 'Thomas', 'Blanche', 'Edmund', 'Alice'],
+    villageNames: ['Nether Caldwell', 'the weavers\u2019 village at Stokeham', 'Birchden'],
+    homeWord: 'your castle at Harfield',
   },
 };
 

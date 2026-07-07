@@ -16,7 +16,9 @@ import {
   applyDeploymentPolitics, soundSignal, DEPLOY_Y, MAP_H, MAP_W,
 } from './sim/battle.ts';
 import { buildAfterAction } from './sim/aar.ts';
+import { initPersonal, writeHome } from './sim/personal.ts';
 import { FORMATIONS } from './sim/era.ts';
+import type { HouseholdChoice } from './sim/types.ts';
 
 let state: GameState = { phase: 'title' };
 let version = 0;
@@ -46,7 +48,14 @@ export const actions = {
 
   startCampaign(era: EraId, seed?: number) {
     const s = seed ?? ((Math.random() * 0xffffffff) >>> 0);
-    state = { phase: 'march', campaign: newCampaign(era, s) };
+    state = { phase: 'household', campaign: newCampaign(era, s) };
+    notify();
+  },
+
+  chooseHousehold(situation: HouseholdChoice) {
+    if (!state.campaign) return;
+    initPersonal(state.campaign, situation);
+    state.phase = 'march';
     notify();
   },
 
@@ -206,6 +215,14 @@ export const actions = {
     if (clock) { clearInterval(clock); clock = undefined; }
     state.aar = buildAfterAction(state.battle, state.campaign);
     state.phase = 'after-action';
+    notify();
+  },
+
+  writeHome(style: 'honest' | 'heroic' | 'silent') {
+    if (!state.campaign || !state.aar || !state.battle || state.aar.letterSent) return;
+    state.aar.letterSent = style;
+    const text = writeHome(state.campaign, style, state.aar.outcome);
+    state.aar.personalNotes.push(text);
     notify();
   },
 

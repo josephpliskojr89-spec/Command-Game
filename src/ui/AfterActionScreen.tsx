@@ -30,6 +30,27 @@ export function AfterActionScreen({ aar, campaign }: { aar: AfterAction; campaig
 
             <JudgmentPanel aar={aar} campaign={campaign} />
 
+            {(aar.personalNotes.length > 0 || aar.canWriteHome) && (
+              <div className="panel">
+                <h3>The Man, Not the General</h3>
+                {aar.personalNotes.map((n, i) => (
+                  <p key={i} style={{ fontSize: 13.5, margin: '6px 0' }}>{n}</p>
+                ))}
+                {aar.canWriteHome && !aar.letterSent && (
+                  <div style={{ marginTop: 10 }}>
+                    <div className="group-label" style={{ fontSize: 12, color: 'var(--gold)', marginBottom: 6 }}>
+                      A courier leaves for home tonight. What do you write to {campaign.personal.spouseName}?
+                    </div>
+                    <div className="row">
+                      <button onClick={() => actions.writeHome('honest')}>The truth, all of it</button>
+                      <button onClick={() => actions.writeHome('heroic')}>The version with trumpets</button>
+                      <button onClick={() => actions.writeHome('silent')}>Nothing. Not tonight</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {aar.casualtyNotes.length > 0 && (
               <div className="panel">
                 <h3>Officers Fallen</h3>
