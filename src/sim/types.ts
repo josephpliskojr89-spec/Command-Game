@@ -455,6 +455,7 @@ export interface CampaignState {
   opKind: OpKind;
   enemyMemory: EnemyMemory; // what they learned from your last battle
   forageDays?: number;      // the country gets eaten out
+  warScore?: number;        // cumulative quality of your victories
   log: Report[];
   pendingEvent?: CampaignEvent;
   pendingEngagement?: Engagement;

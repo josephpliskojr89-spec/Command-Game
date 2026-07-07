@@ -847,12 +847,23 @@ const PATIENCE_SHIFT: Record<OutcomeKind, number> = {
   defeat: -26, disaster: -50,
 };
 
+// Winning the WAR takes more than not losing battles: driven-off enemies
+// come back. The score measures how much of their army stopped existing.
+const WAR_SCORE: Record<OutcomeKind, number> = {
+  'decisive-victory': 3, 'costly-victory': 2, 'narrow-victory': 1,
+  'pyrrhic-victory': 0.5, 'orderly-withdrawal': -0.5, 'chaotic-retreat': -1,
+  defeat: -1.5, disaster: -3,
+};
+
 export function applyOutcomeToWar(c: CampaignState, outcome: OutcomeKind): void {
   c.rulerPatience = clamp(c.rulerPatience + PATIENCE_SHIFT[outcome]);
-  const won = outcome === 'decisive-victory' || outcome === 'costly-victory' || outcome === 'narrow-victory' || outcome === 'pyrrhic-victory';
-  if (won && c.operation >= 3) c.warOver = 'triumph';
-  else if (outcome === 'decisive-victory' && c.operation >= 2) c.warOver = 'triumph';
+  c.warScore = (c.warScore ?? 0) + WAR_SCORE[outcome];
+  if (c.warScore >= 4) c.warOver = 'triumph';
   else if (c.rulerPatience <= 0 || outcome === 'disaster') c.warOver = 'dismissed';
+  else if (c.operation >= 5) {
+    // five operations without a decision: the crown wants a different hand
+    c.warOver = c.warScore >= 3 ? 'triumph' : 'dismissed';
+  }
 }
 
 export function nextOperation(c: CampaignState, survivors: Record<string, number>): void {
