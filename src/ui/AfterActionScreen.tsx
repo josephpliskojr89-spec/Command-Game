@@ -98,7 +98,13 @@ export function AfterActionScreen({ aar, campaign }: { aar: AfterAction; campaig
                 <>
                   <h3>{aar.warEnd === 'triumph' ? 'The War Is Won' : 'Relieved of Command'}</h3>
                   <p style={{ fontSize: 14, textAlign: 'left' }}>{aar.warEndText}</p>
-                  <button className="primary" onClick={actions.newCampaign}>Begin a new war</button>
+                  <button className="primary" onClick={actions.continueSaga}>
+                    Let the years pass — your story continues
+                  </button>
+                  <div className="hint" style={{ marginTop: 8 }}>
+                    The same man, older. Children grow into the story. Your most trusted officers follow you to the next war — dossiers and all.
+                  </div>
+                  <button style={{ marginTop: 10 }} onClick={actions.newCampaign}>Or begin a wholly new life</button>
                 </>
               ) : (
                 <>

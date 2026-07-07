@@ -6,11 +6,12 @@ import type {
   EraId, GameState, OrderType, SpeedSetting, Urgency,
 } from './sim/types.ts';
 import {
-  newCampaign, resolveMarchDay, resolveEventChoice, resolveCampChoice,
+  newCampaign, newWar, resolveMarchDay, resolveEventChoice, resolveCampChoice,
   buildCouncilProposals, endorseProposal, finalScout, resolveEngagement,
   maybeChallenge, resolveChallenge, commendOfficer, censureOfficer,
   nextOperation, type EngagementApproach, type MarchChoices,
 } from './sim/campaign.ts';
+import { interludeYears, takeAide } from './sim/personal.ts';
 import {
   setupBattle, battleTick, issuePlayerOrder, orderGeneralWithdrawal,
   applyDeploymentPolitics, soundSignal, DEPLOY_Y, MAP_H, MAP_W,
@@ -253,6 +254,25 @@ export const actions = {
     state.assignments = undefined;
     state.personalCommand = undefined;
     state.phase = 'march';
+    notify();
+  },
+
+  // The saga: years pass, families grow, and the same man takes a new
+  // field with everything he has become.
+  continueSaga() {
+    if (!state.campaign || !state.aar?.warEnd) return;
+    if (clock) { clearInterval(clock); clock = undefined; }
+    const won = state.aar.warEnd === 'triumph';
+    state.interlude = interludeYears(state.campaign, won);
+    state.phase = 'interlude';
+    notify();
+  },
+
+  startNewWar(takeAideId?: string) {
+    if (!state.campaign) return;
+    if (takeAideId) takeAide(state.campaign, takeAideId);
+    const campaign = newWar(state.campaign);
+    state = { phase: 'household', campaign };
     notify();
   },
 

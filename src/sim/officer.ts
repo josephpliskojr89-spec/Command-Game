@@ -275,6 +275,11 @@ export function interpretOrder(
   const harsh = ctx.disciplineTone < 40;   // you flogged your way here
   const indulgent = ctx.disciplineTone > 60; // you looked the other way
 
+  // He asked for confirmation and here is the same order again: that IS
+  // the confirmation. A repeated order is believed.
+  const confirmed = officer.awaitingConfirm?.type === po.type;
+  if (officer.awaitingConfirm) officer.awaitingConfirm = undefined;
+
   // Effective steadiness: wounds and slighted honor tell on a man.
   const effCourage = t.courage - (officer.wounded ? 12 : 0);
 
@@ -334,21 +339,22 @@ export function interpretOrder(
   }
 
   // --- Trust latency: a doubting officer wants it in writing -----------
-  if (dangerous && ctx.nearbyThreat > 0.45 && t.trust < 42 && !officer.playerEndorsed && rng.chance(0.45)) {
+  if (!confirmed && dangerous && ctx.nearbyThreat > 0.45 && t.trust < 42 && !officer.playerEndorsed && rng.chance(0.45)) {
     officer.perf.deviations++;
+    officer.awaitingConfirm = { type: po.type, tick: ctx.tick };
     observe(officer, 'You have seen him hold an attack while he asked whether you truly meant it.');
     return {
       kind: 'clarify',
       order: { ...unit.order, sinceTick: ctx.tick },
       delayTicks: 0,
-      ackText: `${who} reads the order twice and sends the ${'rider'} straight back. He wants confirmation.`,
+      ackText: `${who} reads the order twice and sends the ${'rider'} straight back. He wants confirmation. Send the same order again and he will go.`,
       returnNote: `${who} asks: "Does the general know what stands in front of me? Confirm the order and I will go."`,
       aarNote: `${who} demanded confirmation before obeying, and the moment aged while he waited.`,
     };
   }
 
   // --- Request clarification: muddled order + literal-minded officer ---
-  if (po.clarity < 55 && t.competence < 45 && t.initiative < 50 && rng.chance(0.5)) {
+  if (!confirmed && po.clarity < 55 && t.competence < 45 && t.initiative < 50 && rng.chance(0.5)) {
     officer.perf.deviations++;
     observe(officer, 'You have seen him freeze when orders were not spelled out.');
     return {
@@ -411,6 +417,7 @@ export function interpretOrder(
     po.clarity * 0.3 +
     officer.confidence * 0.15 +
     (harsh ? 10 : 0) +                       // drilled obedience: fewer liberties
+    (confirmed ? 10 : 0) +                   // a repeated order is a believed order
     (officer.playerEndorsed ? 8 : 0) +       // a trusted man reads you better
     (ctx.honorSlighted ? -10 : 0) +          // a slighted man reads you worse
     (officer.wounded ? -8 : 0) +

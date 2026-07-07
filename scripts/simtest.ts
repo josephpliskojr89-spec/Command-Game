@@ -4,13 +4,13 @@
 // drama: orders interpreted, messengers lost, morale swings, an outcome.
 
 import {
-  newCampaign, resolveMarchDay, resolveEventChoice, resolveCampChoice,
+  newCampaign, newWar, resolveMarchDay, resolveEventChoice, resolveCampChoice,
   finalScout, buildCouncilProposals, endorseProposal, resolveEngagement,
   maybeChallenge, resolveChallenge, nextOperation, applyOutcomeToWar,
 } from '../src/sim/campaign.ts';
 import { setupBattle, battleTick, issuePlayerOrder, visibleReports, lossFraction, soundSignal, applyDeploymentPolitics } from '../src/sim/battle.ts';
 import { buildAfterAction } from '../src/sim/aar.ts';
-import { initPersonal, writeHome } from '../src/sim/personal.ts';
+import { initPersonal, interludeYears, writeHome } from '../src/sim/personal.ts';
 import { FORMATIONS } from '../src/sim/era.ts';
 
 const seed = Number(process.argv[2] ?? 12345);
@@ -82,6 +82,16 @@ for (let t = 0; t < 1500 && !battle.outcome; t++) {
     issuePlayerOrder(battle, campaign, 'f-reserve', 'support', undefined, 'f-center', 'measured');
     ordersSent += 1;
   }
+  // a live player keeps the pressure on: re-order idle line units forward
+  if (battle.tick === 130 || battle.tick === 280 || battle.tick === 450) {
+    for (const id of ['f-left', 'f-center', 'f-right']) {
+      const u = battle.units.find((x) => x.id === id)!;
+      if (!u.routed && (u.status === 'idle' || u.status === 'holding')) {
+        issuePlayerOrder(battle, campaign, id, 'advance', { x: u.x, y: 330 }, undefined, 'urgent');
+        ordersSent += 1;
+      }
+    }
+  }
 }
 
 console.log(`— battle ended tick ${battle.tick}: ${battle.outcome ?? 'NO OUTCOME (bug?)'}`);
@@ -141,12 +151,28 @@ if (aar.canMarchOn) {
       issuePlayerOrder(battle2, campaign, 'f-cavalry', 'charge', { x: 800, y: 250 }, undefined, 'urgent');
     }
   }
-  console.log(`— op ${campaign.operation} battle ended tick ${battle2.tick}: ${battle2.outcome}`);
+  console.log(`— op ${campaign.operation} (${campaign.opKind}, ${campaign.enemyDoctrine} doctrine) ended tick ${battle2.tick}: ${battle2.outcome}`);
   console.log(`— carried strengths: ${JSON.stringify(campaign.unitStrength)}`);
+  console.log(`— enemy memory after op1: ${JSON.stringify(campaign.enemyMemory)}`);
   const grudgeReports = battle2.reports.filter((r) => r.text.includes('banner across the field') || r.text.includes('sighted'));
   console.log(`— grudge sightings in op 2: ${grudgeReports.length}`);
+  const feint = battle2.events.find((e) => e.kind === 'feint-sprung');
+  if (feint) console.log(`— FEINT SPRUNG: ${feint.text}`);
   const aar2 = buildAfterAction(battle2, campaign);
   console.log(`— op 2 AAR: ${aar2.outcomeTitle}; patience ${campaign.rulerPatience}; war over: ${campaign.warOver ?? 'no'}`);
   if (!battle2.outcome) { console.error('FAIL: op2 battle never resolved'); process.exit(1); }
+
+  // --- the saga: years pass, a new war begins ----------------------------
+  if (campaign.warOver) {
+    const interlude = interludeYears(campaign, campaign.warOver === 'triumph');
+    console.log(`\n=== INTERLUDE: ${interlude.years} years ===`);
+    for (const b of interlude.beats) console.log('  · ' + b);
+    const war2 = newWar(campaign);
+    console.log(`=== WAR ${war2.personal.career.warsFought + 1}: doctrine ${war2.enemyDoctrine}, general age ${war2.personal.career.age} ===`);
+    const vets = war2.officers.filter((o) => o.deeds.includes('Followed you into a second war.'));
+    console.log(`— veterans carried over: ${vets.map((o) => o.name).join(', ') || 'none'}`);
+    const family = war2.personal.family.map((f) => `${f.name}(${f.age},${f.role})`).join(' ');
+    console.log(`— family: ${family || 'none'}`);
+  }
 }
 console.log('\nOK');

@@ -108,6 +108,33 @@ misreads it.
 - **The letter home** — after every battle: the truth, the version with
   trumpets, or silence. Each is read, and each is answered in kind.
 
+## The saga and the unsolvable war
+
+The fourth pass adds **dynamic families** and an anti-solvability overhaul
+(built from an adversarial playtest audit — see `DESIGN.md`):
+
+- **The years between** — wars end, the man continues: an interlude ages
+  the family, births children, marries daughters into court or into your
+  officer corps, and can take a child from you. Your three most trusted
+  officers follow you into the next war with their dossiers intact.
+- **The next generation** — a son serves as your aide (steadier orders,
+  and he begs for the night patrol), then demands a command of his own:
+  a real officer whose hidden traits you actually know, because you
+  raised him. He can distinguish himself. He can also fall, mid-battle,
+  with the line still needing orders.
+- **Enemy doctrines** — rash, cunning, defensive, methodical: rumored
+  at muster, felt in battle. Cunning commanders hide their reserve and
+  bait your eager officers with feigned flights; defensive ones grow
+  roots and make you come to them.
+- **The enemy learns you** — their horse redeploys opposite where yours
+  won last battle; your horns teach them to come early.
+- **Operation types** — meeting battles, hold-until-dark defenses, and
+  fortified positions that must be taken; no single plan survives a war.
+- **No free lunches** — passivity gets your baggage burned, ganging up
+  costs frontage, kiting is ignored, stalling drains patience, foraged
+  country is eaten out, urgent riders actually gallop, and the general
+  himself can be wounded fighting at the front.
+
 ## Design notes
 
 - **Officers are the game.** Every formation is commanded by an officer with

@@ -7,10 +7,87 @@
 import { makeRng, type Rng } from './rng.ts';
 import { ERAS, type Era } from './era.ts';
 import type {
-  CampaignEvent, CampaignState, HouseholdChoice, OutcomeKind, PersonalState,
-  Report, Romance,
+  CampaignEvent, CampaignState, FamilyMember, HouseholdChoice, Officer,
+  OutcomeKind, PersonalState, Report, Romance,
 } from './types.ts';
 import { addLog } from './campaign.ts';
+
+// ---------------------------------------------------------------- family helpers
+
+export function youngChildren(c: CampaignState): FamilyMember[] {
+  return c.personal.family.filter((f) => f.role === 'child' && f.age < 13);
+}
+
+export function eligibleAide(c: CampaignState): FamilyMember | undefined {
+  return c.personal.family.find((f) => f.sex === 'm' && f.role === 'child' && f.age >= 13 && f.age < 17);
+}
+
+export function eligibleCommandSon(c: CampaignState): FamilyMember | undefined {
+  return c.personal.family.find((f) => f.sex === 'm' && (f.role === 'child' || f.role === 'aide') && f.age >= 17);
+}
+
+export function eligibleDaughter(c: CampaignState): FamilyMember | undefined {
+  return c.personal.family.find((f) => f.sex === 'f' && f.role === 'child' && f.age >= 15);
+}
+
+export function currentAide(c: CampaignState): FamilyMember | undefined {
+  return c.personal.family.find((f) => f.id === c.personal.aideId && f.role === 'aide');
+}
+
+// A son on your staff: your orders leave the tent through his hands,
+// checked, sealed, and legible.
+export function aideClarityBonus(c: CampaignState): number {
+  return currentAide(c) ? 3 : 0;
+}
+
+// Turn a grown son into an Officer with a command. His traits are his
+// own — but you RAISED him, so you start with true observations no other
+// officer would ever grant you.
+export function commissionSon(c: CampaignState, member: FamilyMember): Officer {
+  const rng = makeRng(c.seed).fork(8000 + member.id.length + member.age);
+  const t = (base: number, spread: number) => Math.max(5, Math.min(95, Math.round(base + rng.range(-spread, spread))));
+  const traits = {
+    competence: t(48, 20), // green, whatever his gifts
+    initiative: t(55, 25),
+    aggression: t(58, 22), // young men lean forward
+    caution: t(40, 20),
+    loyalty: 90,
+    ambition: t(60, 20),
+    pride: t(60, 20),
+    discipline: t(50, 20),
+    courage: t(60, 25),
+    trust: 88,
+  };
+  const officer: Officer = {
+    id: `off-son-${member.id}`,
+    name: member.name,
+    title: 'Your Son',
+    epithet: 'The men watch him for signs of you, and he knows it.',
+    background: `Your son, ${member.age} years old, holding his first command. Every officer in the army is watching how you use him — and how he bears it.`,
+    traits,
+    reputation: { ...traits, competence: t(60, 15), courage: t(70, 15) }, // the army assumes the blood runs true
+    observations: [
+      traits.courage > 60
+        ? 'You raised him: his nerve is real — he broke his arm at nine and did not cry until it was set.'
+        : 'You raised him: he feels fear hard, and hides it well. Watch him in his first real press.',
+      traits.competence > 55
+        ? 'You raised him: he thinks before he moves, even when he was small.'
+        : 'You raised him: he is greener than he believes. He will need plain orders.',
+      traits.pride > 60
+        ? 'You raised him: he would rather die than embarrass you, which is exactly the problem.'
+        : 'You raised him: he takes correction well. Better than you ever did.',
+    ],
+    grudges: [],
+    specialty: rng.chance(0.5) ? 'cavalry' : 'infantry',
+    confidence: 60,
+    deeds: [],
+    perf: { ordersReceived: 0, faithful: 0, deviations: 0, heroics: 0, blunders: 0 },
+    familyId: member.id,
+  };
+  member.role = 'junior-officer';
+  member.notes.push('Given his first command under his father.');
+  return officer;
+}
 
 function clamp(n: number): number {
   return Math.max(0, Math.min(100, Math.round(n)));
@@ -32,8 +109,36 @@ export interface HouseholdOption {
 export function householdOptions(c: CampaignState): HouseholdOption[] {
   const era = ERAS[c.era];
   const rng = makeRng(c.seed).fork(2001);
+  // A saga war: the family already exists; the only question is where
+  // they weather this one.
+  if (c.personal?.career?.warsFought > 0) {
+    const p = c.personal;
+    if (p.spouseName) {
+      const kidsText = p.family.filter((f) => f.role === 'child' || f.role === 'aide').map((f) => f.name).join(', ');
+      return [
+        {
+          id: 'home',
+          title: `${p.spouseName} keeps the household`,
+          detail: 'Your family waits at home this war.',
+          flavor: `${p.spouseName}${kidsText ? ` and ${kidsText}` : ''} stay behind. She has done this before; the goodbye is practiced now, which does not make it easier. It makes it worse, and quieter.`,
+        },
+        {
+          id: 'camp',
+          title: `${p.spouseName} travels with the baggage`,
+          detail: 'The family rides with the army again.',
+          flavor: `${p.spouseName} declares the household will travel before you finish asking. The quartermaster, who remembers her from the last war, requisitions an extra wagon and hides the good wine.`,
+        },
+      ];
+    }
+    return [{
+      id: 'alone',
+      title: 'You march alone, as ever',
+      detail: 'Nothing waits behind you — still.',
+      flavor: 'Another war, the same empty tent at the end of the column. The court finds it more suspicious every year. So, some nights, do you.',
+    }];
+  }
   const spouse = rng.pick(era.womenNames);
-  const kids = rng.shuffle(era.childNames).slice(0, 2);
+  const kids = [rng.pick(era.sonNames), rng.chance(0.5) ? rng.pick(era.sonNames.slice(1)) : rng.pick(era.daughterNames)];
   return [
     {
       id: 'home',
@@ -60,14 +165,37 @@ export function initPersonal(c: CampaignState, situation: HouseholdChoice): void
   const era = ERAS[c.era];
   const rng = makeRng(c.seed).fork(2001);
   const spouse = rng.pick(era.womenNames);
-  const kids = rng.shuffle(era.childNames).slice(0, 2);
+  // the eldest is a son (the saga needs its heir); the second may be either
+  const secondIsSon = rng.chance(0.5);
+  const kids: { name: string; sex: 'm' | 'f' }[] = [
+    { name: rng.pick(era.sonNames), sex: 'm' },
+    { name: secondIsSon ? rng.pick(era.sonNames.slice(1)) : rng.pick(era.daughterNames), sex: secondIsSon ? 'm' : 'f' },
+  ];
+  const priorCareer = c.personal?.career; // preserved across wars in a saga
+  const priorFamily = c.personal?.family;
   c.personal = {
     situation,
-    spouseName: situation === 'alone' ? undefined : spouse,
-    spouseBond: 55 + rng.int(0, 20),
-    children: situation === 'alone' ? [] : kids.map((name, i) => ({ name, age: 5 + i * 4 + rng.int(0, 3) })),
-    resolve: situation === 'camp' ? 70 : situation === 'home' ? 62 : 56,
-    arcFlags: [],
+    spouseName: situation === 'alone' ? undefined : (c.personal?.spouseName ?? spouse),
+    spouseBond: c.personal?.spouseName ? c.personal.spouseBond : 55 + rng.int(0, 20),
+    family: priorFamily && priorFamily.length > 0
+      ? priorFamily
+      : situation === 'alone'
+        ? []
+        : kids.map((k, i) => ({
+            id: `fam-${i}`,
+            name: k.name,
+            sex: k.sex,
+            age: 8 + i * 4 + rng.int(0, 3),
+            role: 'child' as const,
+            notes: [],
+          })),
+    career: priorCareer ?? { age: 30 + rng.int(0, 6), warsFought: 0, warsWon: 0, chronicle: [] },
+    resolve: priorCareer && priorCareer.warsFought > 0
+      ? Math.min(100, c.personal.resolve + (situation === 'camp' ? 5 : 0))
+      : situation === 'camp' ? 70 : situation === 'home' ? 62 : 56,
+    aideId: c.personal?.aideId,
+    arcFlags: c.personal?.arcFlags?.filter((f) => f.startsWith('saga:')) ?? [],
+    romance: c.personal?.romance,
   };
   if (situation === 'home') {
     addLog(c, 'personal', `${spouse} stood at the gate with the children as the column formed. She did not weep — she never does where the men can see — and you carried that with you for the first ten miles.`);
@@ -117,9 +245,9 @@ const PERSONAL_EVENTS: PEventDef[] = [
   {
     id: 'p-letter-fever',
     once: true,
-    when: (c) => c.personal.situation === 'home' && c.day >= 2,
+    when: (c) => c.personal.situation === 'home' && c.day >= 2 && youngChildren(c).length > 0,
     build: (c) => {
-      const child = c.personal.children[0];
+      const child = youngChildren(c)[0];
       return {
         id: 'p-letter-fever',
         title: 'A Letter From Home',
@@ -194,9 +322,10 @@ const PERSONAL_EVENTS: PEventDef[] = [
   {
     id: 'p-camp-fever',
     once: true,
-    when: (c, rng) => c.personal.situation === 'camp' && c.day >= 3 && (c.weather === 'rain' || rng.chance(0.5)),
+    when: (c, rng) => c.personal.situation === 'camp' && c.day >= 3 && youngChildren(c).length > 0 && (c.weather === 'rain' || rng.chance(0.5)),
     build: (c) => {
-      const child = c.personal.children[c.personal.children.length - 1];
+      const kids = youngChildren(c);
+      const child = kids[kids.length - 1];
       return {
         id: 'p-camp-fever',
         title: 'Fever in the Baggage Train',
@@ -247,6 +376,142 @@ const PERSONAL_EVENTS: PEventDef[] = [
       };
     },
     resolve: {}, // handled dynamically in applyPersonalChoice (needs the officer id)
+  },
+  // ------------------------------------------------ the next generation
+  {
+    id: 'p-son-command',
+    when: (c) => !!eligibleCommandSon(c) && c.day >= 2 && !fired(c, `p-son-command-war${c.personal.career.warsFought}`),
+    build: (c) => {
+      const son = eligibleCommandSon(c)!;
+      return {
+        id: 'p-son-command',
+        title: `${son.name} Asks For a Command`,
+        text: `Your son ${son.name} — ${son.age} now, and a head taller than when this war started being his whole world — stands in front of your map table with his helmet under his arm and asks for a command. He has rehearsed this. "Any formation. The reserve, even. I did not come on campaign to guard your correspondence." Every officer in the army will read whatever you answer as a statement about nepotism, about trust, or about fear.`,
+        options: [
+          { label: 'Give him a command', detail: 'He becomes one of your officers — with your name on his back and green hands on the reins. You know exactly what he is; you raised him.', apply: 'p:son:command' },
+          { label: 'Keep him on your staff', detail: 'Your orders keep his careful hands. His ambition keeps a lid on it. For now.', apply: 'p:son:staff' },
+          { label: 'Refuse — he stays with the baggage', detail: 'Alive, furious, and learning what his father thinks of him.', apply: 'p:son:refuse' },
+        ],
+      };
+    },
+    resolve: {
+      'p:son:command': (c) => {
+        const son = eligibleCommandSon(c)!;
+        const officer = commissionSon(c, son);
+        c.officers.push(officer);
+        if (c.personal.aideId === son.id) c.personal.aideId = undefined;
+        shiftResolve(c, +4);
+        addLog(c, 'personal', `You give ${son.name} a command. The council takes it quietly — every one of them asked a father for the same thing once. He salutes you like a stranger, which is correct, and grins on the way out, which is not. Assign him a formation at the next deployment.`, true);
+      },
+      'p:son:staff': (c) => {
+        const son = eligibleCommandSon(c)!;
+        son.role = 'aide';
+        c.personal.aideId = son.id;
+        son.notes.push('Kept on his father\'s staff when he asked for a command.');
+        addLog(c, 'personal', `You keep him on the staff. "Your orders reach the wings legible because of you," you tell him, which is true, and he hears the other half of it anyway. He seals the evening dispatches with unnecessary force.`);
+      },
+      'p:son:refuse': (c) => {
+        const son = eligibleCommandSon(c)!;
+        son.notes.push('Refused a command by his father, in front of no one, which somehow made it worse.');
+        shiftResolve(c, -4);
+        addLog(c, 'personal', `You refuse. He takes it standing, the way you taught him, and asks to be excused, the way you taught him. Through the tent wall you hear his horse leave the lines at a gallop and come back an hour later, walking. He is polite at supper. You would rather he had shouted.`);
+      },
+    },
+  },
+  {
+    id: 'p-aide-scouts',
+    when: (c, rng) => !!currentAide(c) && c.day >= 3 && !fired(c, `p-aide-scouts-war${c.personal.career.warsFought}`) && rng.chance(0.7),
+    build: (c) => {
+      const aide = currentAide(c)!;
+      return {
+        id: 'p-aide-scouts',
+        title: 'The Aide Wants the Dark',
+        text: `${aide.name} asks — correctly, through the chief of scouts, everything by the book — for a place on tonight's forward patrol. He is ${aide.age}. The patrol is real work over real ground with the real enemy on it, and he knows you can forbid it, and he knows what it costs him if you do, and so do you.`,
+        options: [
+          { label: 'Let him ride', detail: 'The patrol comes back with better eyes — or does not come back whole.', apply: 'p:aide:ride' },
+          { label: 'Forbid it', detail: 'He stays. Something between you goes a little quieter.', apply: 'p:aide:forbid' },
+        ],
+      };
+    },
+    resolve: {
+      'p:aide:ride': (c, rng) => {
+        const aide = currentAide(c)!;
+        markFired(c, `p-aide-scouts-war${c.personal.career.warsFought}`);
+        if (rng.chance(0.18)) {
+          aide.notes.push('Wounded on a night patrol he begged to join.');
+          c.personal.family.find((f) => f.id === aide.id)!.role = 'child'; // off the staff to heal
+          c.personal.aideId = undefined;
+          shiftResolve(c, -12);
+          c.intel = Math.min(100, c.intel + 6);
+          addLog(c, 'personal', `The patrol comes back at dawn with good maps and your son over a saddle — a spear graze along the ribs, wet but shallow. The physician calls it a lesson priced fairly. You do not trust yourself to speak until noon. ${c.personal.spouseName ? c.personal.spouseName + ' does not say the thing she has every right to say, which is worse than saying it.' : ''}`, true);
+        } else {
+          aide.notes.push('Rode a night patrol and came back with the best sketch of the enemy lines anyone produced all war.');
+          shiftResolve(c, +5);
+          c.intel = Math.min(100, c.intel + 12);
+          addLog(c, 'personal', `He comes back muddy, frozen, and eleven feet tall, with a sketch of the enemy picket lines better than anything the scouts have produced this war. You critique the sketch. He hears the pride under it. Both of you pretend otherwise.`, true);
+        }
+      },
+      'p:aide:forbid': (c) => {
+        const aide = currentAide(c)!;
+        markFired(c, `p-aide-scouts-war${c.personal.career.warsFought}`);
+        aide.notes.push('Forbidden the night patrol.');
+        shiftResolve(c, -2);
+        addLog(c, 'personal', `You forbid it. He copies the evening orders in a hand so perfectly controlled it is a form of insolence. The chief of scouts, who has sons of his own, finds a reason to be elsewhere.`);
+      },
+    },
+  },
+  {
+    id: 'p-daughter-suitor',
+    once: true,
+    when: (c) => !!eligibleDaughter(c) && c.day >= 3,
+    build: (c) => {
+      const daughter = eligibleDaughter(c)!;
+      const rng = makeRng(c.seed).fork(8800);
+      const suitor = c.officers
+        .filter((o) => !o.dead && !o.familyId)
+        .sort((a, b) => b.traits.ambition - a.traits.ambition)[0];
+      markFired(c, `p-suitor:${suitor.id}`);
+      return {
+        id: 'p-daughter-suitor',
+        title: 'A Formal Call',
+        text: `${suitor.title} ${shortNameOf(suitor.name)} requests a private word, arrives in his best coat, and asks — with a soldier's directness wrapped around a boy's terror — for your daughter ${daughter.name}'s hand. It is a good match on paper: his family, his record, his prospects if this war goes well. It would also bind one of your officers to you by blood. You know what his epithet says. You also know what you have SEEN.`,
+        options: [
+          { label: 'Give your blessing', detail: 'An officer becomes kin. Kin does not waver — usually.', apply: 'p:suitor:bless' },
+          { label: 'After the war', detail: 'Neither yes nor no. He fights this whole campaign courting your opinion.', apply: 'p:suitor:defer' },
+          { label: 'Refuse him', detail: 'Politely, finally, and he will remember it in his hands.', apply: 'p:suitor:refuse' },
+        ],
+      };
+    },
+    resolve: {
+      'p:suitor:bless': (c) => {
+        const daughter = eligibleDaughter(c)!;
+        const suitorId = flagValue(c, 'p-suitor')!;
+        const suitor = c.officers.find((o) => o.id === suitorId)!;
+        daughter.role = 'wed-officer';
+        daughter.weddedTo = suitor.id;
+        daughter.notes.push(`Betrothed to ${suitor.title} ${shortNameOf(suitor.name)} in the middle of a war.`);
+        suitor.kinById = daughter.id;
+        suitor.traits.loyalty = Math.min(95, suitor.traits.loyalty + 15);
+        suitor.traits.trust = Math.min(95, suitor.traits.trust + 12);
+        suitor.background += ' He is your son-in-law now — or will be, the day the army goes home.';
+        shiftResolve(c, +5);
+        addLog(c, 'personal', `You give your blessing. The camp finds out by nightfall and the man's own formation cheers him at the morning muster, which he pretends to quell. An officer bound by blood reads your orders differently — the way a man reads letters from home.`, true);
+      },
+      'p:suitor:defer': (c) => {
+        const suitorId = flagValue(c, 'p-suitor')!;
+        const suitor = c.officers.find((o) => o.id === suitorId)!;
+        suitor.traits.ambition = Math.min(95, suitor.traits.ambition + 8);
+        suitor.confidence = Math.min(100, suitor.confidence + 5);
+        addLog(c, 'personal', `"After the war," you say, which both of you understand to mean: show me. He salutes like a man who has just been handed a ladder. Expect him to reach for glory — he is courting you now on every field.`);
+      },
+      'p:suitor:refuse': (c) => {
+        const suitorId = flagValue(c, 'p-suitor')!;
+        const suitor = c.officers.find((o) => o.id === suitorId)!;
+        suitor.traits.trust = Math.max(5, suitor.traits.trust - 10);
+        suitor.traits.pride = Math.min(95, suitor.traits.pride + 8);
+        addLog(c, 'personal', `You refuse — kindly, which does not help. He thanks you for your candor with a face like a shut door. It will not make him disloyal. It will make him exact.`);
+      },
+    },
   },
   // ------------------------------------------------ the romance arc
   {
@@ -622,6 +887,126 @@ export function writeHome(c: CampaignState, style: 'honest' | 'heroic' | 'silent
   return `You do not write. There is no version of the letter you are willing to send, so you send nothing, which is also a letter, and she will read it correctly.`;
 }
 
+// ---------------------------------------------------------------- the interlude
+
+// Years pass between wars. Children grow into the story. This is what
+// makes families DYNAMIC: time does things to them, and to you.
+export interface Interlude {
+  years: number;
+  beats: string[];
+  aideCandidateId?: string;
+}
+
+export function interludeYears(c: CampaignState, won: boolean): Interlude {
+  const p = c.personal;
+  const era = ERAS[c.era];
+  const rng = makeRng(c.seed).fork(9000 + p.career.warsFought * 31);
+  const years = rng.int(2, 4);
+  const beats: string[] = [];
+
+  p.career.warsFought += 1;
+  if (won) p.career.warsWon += 1;
+  p.career.chronicle.push(
+    `${ordinalWord(p.career.warsFought)} war: ${won ? 'won' : 'lost'}, against ${c.enemyName}.`,
+  );
+  p.career.age += years;
+  beats.push(`${years} years pass. You are ${p.career.age} now. The scars ache before rain, and you have opinions about chairs.`);
+
+  // everyone ages
+  for (const f of p.family) {
+    if (f.role !== 'fallen') f.age += years;
+  }
+
+  // the romance resolves: wars end these things or formalize them
+  if (p.romance && p.romance.stage === 2 && !p.romance.lost) {
+    if (!p.romance.affair && !p.spouseName) {
+      p.spouseName = p.romance.name;
+      p.spouseBond = Math.min(95, p.romance.bond + 25);
+      beats.push(`You married ${p.romance.name} the winter after the war, in her rebuilt village, with two of your officers standing witness and the whole valley drunk for three days. She still keeps the accounts. Including yours.`);
+      p.romance = undefined;
+    } else if (p.romance.affair) {
+      beats.push(`${p.romance.name} did not follow the army home. Some accounts close themselves quietly, out of kindness, and you let this one.`);
+      p.romance = undefined;
+      shiftResolve(c, -4);
+    }
+  } else if (p.romance) {
+    p.romance = undefined;
+  }
+
+  // births
+  if (p.spouseName && p.spouseBond > 45 && rng.chance(0.55)) {
+    const sex: 'm' | 'f' = rng.chance(0.5) ? 'm' : 'f';
+    const pool = sex === 'm' ? era.sonNames : era.daughterNames;
+    const name = rng.pick(pool.filter((n) => !p.family.some((f) => f.name === n))) ?? rng.pick(pool);
+    p.family.push({
+      id: `fam-${p.family.length}-w${p.career.warsFought}`,
+      name, sex, age: Math.max(1, years - 1), role: 'child', notes: [],
+    });
+    beats.push(`A ${sex === 'm' ? 'son' : 'daughter'}, ${name}, born while you were learning to be a civilian again. ${sex === 'm' ? 'He' : 'She'} has your mother's frown.`);
+  }
+
+  // daughters of age may marry into the capital between wars
+  for (const f of p.family) {
+    if (f.sex === 'f' && f.role === 'child' && f.age >= 17 && rng.chance(0.5)) {
+      f.role = 'wed-court';
+      f.weddedTo = 'a family of standing at court';
+      f.notes.push('Married into the capital between the wars.');
+      beats.push(`${f.name} married into a family of standing at court — a good match, her own choice, and incidentally a pair of ears at every dinner where your name comes up. Her letters are worth regiments.`);
+      markFired(c, 'saga:court-daughter');
+      break;
+    }
+  }
+
+  // unresolved vengeance goes cold
+  if (p.vengeance && !p.vengeance.settled) {
+    beats.push(`The war ended around the name in your campaign book — ${p.vengeance.enemyName} went home alive. You copied the name into the new book. You are not proud of that, and you did it anyway.`);
+    markFired(c, 'saga:vengeance-cold');
+    p.vengeance = undefined;
+  }
+
+  // the wound that time gives everyone, sometimes
+  if (p.family.length > 0 && rng.chance(0.12)) {
+    const victim = rng.pick(p.family.filter((f) => f.role === 'child' && f.age < 12));
+    if (victim) {
+      victim.role = 'fallen';
+      victim.notes.push('Taken by a winter fever between the wars.');
+      beats.push(`The winter fever came through the district in the second year, and it took ${victim.name}. There is no version of this sentence that does the work. ${p.spouseName ? `${p.spouseName} planted a tree.` : ''} You drill the memory like a formation: daily, and it never gets easier to hold.`);
+      shiftResolve(c, -10);
+      if (p.spouseName) p.spouseBond = Math.max(0, p.spouseBond - 5);
+    }
+  }
+
+  // who can serve next war
+  const aide = p.family.find((f) => f.sex === 'm' && (f.role === 'child' || f.role === 'aide') && f.age >= 13 && f.age < 17);
+  if (aide) {
+    beats.push(`${aide.name} is ${aide.age} now, rides like a courier, and has been caught twice practicing your signature — for entirely honorable dispatch-copying reasons, he insists.`);
+  }
+  const cmdSon = p.family.find((f) => f.sex === 'm' && (f.role === 'child' || f.role === 'aide') && f.age >= 17);
+  if (cmdSon) {
+    beats.push(`${cmdSon.name} is ${cmdSon.age} — a man now, with a man's seat on a horse and a man's opinions at your table. When the next war comes, he will not accept being left behind. You have already had the argument in your head. You lost.`);
+  }
+  const sonOfficer = p.family.find((f) => f.role === 'junior-officer');
+  if (sonOfficer) {
+    beats.push(`${sonOfficer.name} kept his commission between the wars. The men call him by your old nickname, which nobody told him and he has not asked about.`);
+  }
+
+  // resolve mostly heals with time
+  p.resolve = Math.min(100, Math.max(0, Math.round(p.resolve + (65 - p.resolve) * 0.7)));
+  p.familyCaptured = false;
+  p.scandal = false;
+  p.aideId = p.family.find((f) => f.role === 'aide')?.id;
+
+  return { years, beats, aideCandidateId: aide?.id };
+}
+
+export function takeAide(c: CampaignState, familyId: string): void {
+  const f = c.personal.family.find((x) => x.id === familyId);
+  if (!f) return;
+  f.role = 'aide';
+  c.personal.aideId = f.id;
+  f.notes.push('Serves as his father\'s aide.');
+}
+
 // ---------------------------------------------------------------- next op
 
 export function personalNextOperation(c: CampaignState): void {
@@ -686,4 +1071,8 @@ function flagValue(c: CampaignState, prefix: string): string | undefined {
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function ordinalWord(n: number): string {
+  return ['Zeroth', 'First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth'][n] ?? `${n}th`;
 }

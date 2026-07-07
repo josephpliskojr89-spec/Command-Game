@@ -2,6 +2,7 @@ import { useGame } from './store.ts';
 import { ERAS } from './sim/era.ts';
 import { TitleScreen, EraSelectScreen } from './ui/TitleEraScreens.tsx';
 import { HouseholdScreen } from './ui/HouseholdScreen.tsx';
+import { InterludeScreen } from './ui/InterludeScreen.tsx';
 import { CampaignScreen } from './ui/CampaignScreen.tsx';
 import { CampScreen } from './ui/CampScreen.tsx';
 import { DeploymentScreen } from './ui/DeploymentScreen.tsx';
@@ -41,6 +42,9 @@ export function App() {
       )}
       {game.phase === 'after-action' && game.campaign && game.aar && (
         <AfterActionScreen aar={game.aar} campaign={game.campaign} />
+      )}
+      {game.phase === 'interlude' && game.campaign && game.interlude && (
+        <InterludeScreen campaign={game.campaign} interlude={game.interlude} />
       )}
     </div>
   );

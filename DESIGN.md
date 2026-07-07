@@ -164,6 +164,78 @@ man.
 - **Unmarried pressure**: the crown proposes a marriage alliance;
   patience for freedom, or freedom for patience.
 
+## Implemented systems (fourth pass: dynamic families & anti-solvability)
+
+### The saga: dynamic families
+Wars end; the man continues. An **interlude** passes 2–4 years between wars:
+children age, are born, marry into court or into your officer corps, and
+can be lost to winter fevers. Then a new commission arrives, and the same
+general — older, with a career chronicle — takes a new field. His three
+most trusted officers follow him, **dossiers and all**: the long game of
+learning your men pays across wars.
+
+Family members take roles:
+- **The aide** (a son, 13–16): your orders leave the tent through his
+  hands (+clarity), he begs to ride night patrols, and he can come back
+  over a saddle.
+- **The son with a command** (17+): a real officer with hidden traits —
+  but you *raised* him, so you start with true observations no other
+  officer grants. If he falls, it happens mid-battle, and the battle
+  goes on requiring you.
+- **The daughter's marriage**: an ambitious officer asks for her hand —
+  accept and he becomes kin (loyalty and trust rise for good), defer and
+  he courts your opinion on every field, refuse and he remembers it in
+  his hands. Daughters who marry at court become your ears in the capital.
+
+### Anti-solvability
+An adversarial playtest audit found ten dominant strategies; all the
+top-ranked ones are countered:
+
+1. **Focus-fire ganging** — crowding divides attacker frontage
+   (`power / sqrt(n)`), defenders bite the men at their shoulders, and
+   defenders turn to face their heaviest assailant (flanking must be
+   earned by maneuver, not queueing).
+2. **The baseline turtle** — non-rash commanders now *decline the
+   assault* against a passive line: they halt out of bowshot and send
+   their cavalry drifting toward your baggage. And the nightfall verdict
+   requires *holding the field*: a stalemate you spent in your own
+   deployment zone is an orderly withdrawal, not a win.
+3. **Cavalry kiting** — enemy infantry ignores lone skirmishing horse
+   and marches on the body of your army.
+4. **Scripted soft targets** — enemy cavalry scores targets by exposure
+   (no more charging into woods or prepared kill-boxes; nothing exposed
+   means a threat-in-being against your camp instead), and their
+   skirmishers tuck behind the main body when your horse crosses.
+5. **The signal meta** — standing orders decay in waiting minds
+   (aggressive officers jump the horn, sloppy ones let the order lapse),
+   release is staggered and mistargetable, and the enemy hears your
+   horns too.
+6. **The nightfall bank** — a commander losing on points escalates
+   after tick ~650: reserve committed, cavalry at your camp, every horn
+   at once.
+7. **Rest-forage perpetual motion** — foraged country is eaten out
+   (yields decay), and dawdling drains the ruler's patience daily.
+8. **Dead urgency choice** — urgent riders gallop 35% faster and orders
+   execute in half the delay; the clarity cost now buys something.
+9. **The immortal general** — the banner has a body: a general fighting
+   at the front can be wounded (resolve, hence clarity, suffers), and
+   being swept up in your own formation's rout marks every order after.
+10. **The challenge freeroll** — tolerated defiance is contagious:
+    when your hothead rides out against orders, every proud officer
+    watches your word become a suggestion.
+
+Plus **enemy doctrines** (rash / cunning / defensive / methodical,
+rumored honestly by prisoners at muster), the **feigned flight** (cunning
+commanders bait your eager officers into a reserve counter-charge — a
+withdrawal that keeps its shields is not a rout), **hidden reserves**
+("the scouts could not locate their reserve; it exists; it is somewhere"),
+**enemy adaptation** (their horse redeploys opposite where yours won last
+battle; your signals teach them to come early), **operation types**
+(meeting battle / hold-until-dark / take-their-ground — the defense op
+makes standing at nightfall the victory, their-ground makes it the
+failure), and **trust-latency confirmation** (a repeated order is a
+believed order).
+
 ## Roadmap (advisor proposals not yet implemented)
 
 Ranked roughly by (impact on the command fantasy) / (cost):

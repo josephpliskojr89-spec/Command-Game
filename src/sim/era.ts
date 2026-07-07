@@ -35,7 +35,8 @@ export interface Era {
   messengerWord: string;
   // the personal life
   womenNames: string[];   // spouses and campaign romances
-  childNames: string[];
+  sonNames: string[];
+  daughterNames: string[];
   villageNames: string[]; // where a woman might be from
   homeWord: string;       // what "home" is called: estate, hall, manor...
 }
@@ -92,7 +93,8 @@ export const ERAS: Record<EraId, Era> = {
     campName: 'the marching camp',
     messengerWord: 'rider',
     womenNames: ['Claudia', 'Fulvia', 'Aemilia', 'Livia', 'Tertia', 'Servilia'],
-    childNames: ['Gaius', 'Lucius', 'Publius', 'Cornelia', 'Tullia'],
+    sonNames: ['Gaius', 'Lucius', 'Publius'],
+    daughterNames: ['Cornelia', 'Tullia'],
     villageNames: ['Casinum', 'Aquilonia', 'the hill village of Trebula'],
     homeWord: 'your house on the Caelian',
   },
@@ -136,7 +138,8 @@ export const ERAS: Record<EraId, Era> = {
     campName: 'the night camp',
     messengerWord: 'rider',
     womenNames: ['Aelfgifu', 'Eadgyth', 'Wulfrun', 'Godgifu', 'Leofflaed', 'Mildrith'],
-    childNames: ['Eadmund', 'Aelfric', 'Aethelflaed', 'Wulfstan', 'Eadgifu'],
+    sonNames: ['Eadmund', 'Aelfric', 'Wulfstan'],
+    daughterNames: ['Aethelflaed', 'Eadgifu'],
     villageNames: ['Cealcford', 'Buckelanbyrig', 'the mill village at Otterburne'],
     homeWord: 'your hall in the shire',
   },
@@ -180,7 +183,8 @@ export const ERAS: Record<EraId, Era> = {
     campName: 'the shore camp',
     messengerWord: 'runner',
     womenNames: ['Sigrid', 'Astrid', 'Thyra', 'Gunnhild', 'Ragnhild', 'Freydis'],
-    childNames: ['Leif', 'Einar', 'Thora', 'Gudrun', 'Snorri'],
+    sonNames: ['Leif', 'Einar', 'Snorri'],
+    daughterNames: ['Thora', 'Gudrun'],
     villageNames: ['the fishing steads at Meretun', 'Wealdham', 'the river hamlet of Sceapige'],
     homeWord: 'your steading across the sea',
   },
@@ -225,7 +229,8 @@ export const ERAS: Record<EraId, Era> = {
     campName: 'the palisade camp',
     messengerWord: 'rider',
     womenNames: ['Adeliza', 'Emma', 'Mathilde', 'Isabelle', 'Constance', 'Aveline'],
-    childNames: ['Robert', 'Guillaume', 'Adela', 'Richard', 'Mahaut'],
+    sonNames: ['Robert', 'Guillaume', 'Richard'],
+    daughterNames: ['Adela', 'Mahaut'],
     villageNames: ['Fenstanton', 'the eel-fishers\u2019 village at Welle', 'Bourne'],
     homeWord: 'your manor in Normandy',
   },
@@ -270,7 +275,8 @@ export const ERAS: Record<EraId, Era> = {
     campName: 'the war camp',
     messengerWord: 'herald',
     womenNames: ['Eleanor', 'Isabella', 'Joan', 'Margaret', 'Alys', 'Cecily'],
-    childNames: ['Henry', 'Thomas', 'Blanche', 'Edmund', 'Alice'],
+    sonNames: ['Henry', 'Thomas', 'Edmund'],
+    daughterNames: ['Blanche', 'Alice'],
     villageNames: ['Nether Caldwell', 'the weavers\u2019 village at Stokeham', 'Birchden'],
     homeWord: 'your castle at Harfield',
   },

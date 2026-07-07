@@ -45,6 +45,9 @@ export function newCampaign(era: EraId, seed: number): CampaignState {
     officers,
     enemyOfficers,
     enemyCavSide: rng.chance(0.5) ? 'left' : 'right',
+    enemyDoctrine: rng.pick(['rash', 'cunning', 'defensive', 'methodical'] as const),
+    opKind: 'assault',
+    enemyMemory: {},
     log: [],
     engagementsDone: [],
     objectiveText: e.objective(place),
@@ -54,12 +57,30 @@ export function newCampaign(era: EraId, seed: number): CampaignState {
     nextReportId: 1,
     // placeholder until the player chooses a household on the setup screen
     personal: {
-      situation: 'alone', spouseBond: 0, children: [], resolve: 60, arcFlags: [],
+      situation: 'alone', spouseBond: 0, family: [], resolve: 60, arcFlags: [],
+      career: { age: 32, warsFought: 0, warsWon: 0, chronicle: [] },
     },
   };
   addLog(c, 'event', e.strategicOrder(place, e.rulerName), true);
   addLog(c, 'logistics', `The army musters: some ${totalMuster()} men under arms, ${officers.length} officers of note, and food for roughly twelve days.`);
+  addLog(c, 'scout', doctrineRumor(c), true);
   return c;
+}
+
+// What the prisoners and old soldiers say about how this commander fights.
+// True, but coarse — knowing his doctrine is not the same as beating it.
+function doctrineRumor(c: CampaignState): string {
+  const cmdr = ERAS[c.era].enemyCommander;
+  switch (c.enemyDoctrine) {
+    case 'rash':
+      return `Men who fought ${cmdr} before say he attacks at dawn, at once, everywhere — 'he thinks a battle is a race.' Expect him early and all in.`;
+    case 'cunning':
+      return `Men who fought ${cmdr} before say nothing he shows you is free: false camps, false retreats, reserves where reserves should not be. Believe half of what your scouts see, and choose the half carefully.`;
+    case 'defensive':
+      return `Men who fought ${cmdr} before say he picks his ground and grows roots — 'he wins battles by making you lose them.' If you want him, you will likely have to go and get him.`;
+    case 'methodical':
+      return `Men who fought ${cmdr} before call him a drillmaster: deliberate, orderly, nothing wasted. He will come, in his own time, in good order.`;
+  }
 }
 
 function totalMuster(): number {
@@ -117,11 +138,15 @@ export function resolveMarchDay(c: CampaignState, choices: MarchChoices): void {
     c.fatigue = clamp(c.fatigue + 5);
   }
 
-  // Supply.
+  // Supply. Foraging the same country twice yields less: it gets eaten out.
   const consumption = choices.pace === 'rest' ? 0.8 : 1;
   if (choices.supply === 'forage') {
-    const gained = rng.range(0.5, 1.8);
+    c.forageDays = (c.forageDays ?? 0) + 1;
+    const gained = rng.range(0.5, 1.8) * Math.pow(0.8, Math.max(0, c.forageDays - 1));
     c.food = Math.max(0, c.food - consumption + gained);
+    if (c.forageDays >= 3) {
+      addLog(c, 'logistics', 'The foraging parties range farther for less. This country is eaten out, and its people have learned to bury what they love.');
+    }
     if (rng.chance(0.4)) {
       c.disciplineTone = clamp(c.disciplineTone + 6);
       c.cohesion = clamp(c.cohesion - 4);
@@ -174,6 +199,13 @@ export function resolveMarchDay(c: CampaignState, choices: MarchChoices): void {
   }
 
   c.day += 1;
+  // Time is not free: a general who dawdles is a general who is questioned.
+  if (c.day > MARCH_DAYS + 2 + (c.operation - 1) * (MARCH_DAYS + 3)) {
+    c.rulerPatience = clamp(c.rulerPatience - 2);
+    if (c.rulerPatience % 10 === 0) {
+      addLog(c, 'event', `A letter from ${ERAS[c.era].rulerTitle} inquires, in a tone, why the army is eating and not fighting.`, true);
+    }
+  }
   if (c.distance <= 0) {
     c.distance = 0;
     addLog(c, 'scout', `Outriders report the enemy in strength ahead, near ${c.placeName}. The next decision is where to camp.`, true);
@@ -709,6 +741,15 @@ export function resolveChallenge(c: CampaignState, answer: string /* officerId o
       addLog(c, 'command', `You forbid it. An hour later a horse is missing and so is ${hothead.title} ${shortName(hothead.name)}. He is already out between the lines. The camp empties onto the rampart to watch.`, true);
       observe(hothead, 'You have seen him defy you outright when his honor was in the wind.');
       hothead.traits.trust = clamp(hothead.traits.trust - 5);
+      // tolerated defiance is contagious: the general's word is negotiable now
+      c.disciplineTone = clamp(c.disciplineTone + 8);
+      for (const o of c.officers) {
+        if (o.id !== hothead.id && !o.dead && o.traits.pride > 60) {
+          o.traits.discipline = clamp(o.traits.discipline - 3);
+          o.traits.trust = clamp(o.traits.trust - 3);
+        }
+      }
+      addLog(c, 'command', 'Whatever happens out there, every proud officer in the army has just watched your direct order become a suggestion. That has a price, and it compounds.');
     } else {
       c.morale = clamp(c.morale - 4);
       addLog(c, 'event', `No one answers. ${champion.name} rides the line once more, spits, and trots home. The silence in the camp afterward has a taste.`);
@@ -822,8 +863,29 @@ export function nextOperation(c: CampaignState, survivors: Record<string, number
   // new ground, same war
   const otherPlaces = era.placeNames.filter((p) => p !== c.placeName);
   c.placeName = rng.pick(otherPlaces);
-  c.objectiveText = era.objective(c.placeName);
   c.enemyCavSide = rng.chance(0.5) ? 'left' : 'right';
+  // The shape of the next operation varies — no single battle plan
+  // survives a whole war. Defensive commanders make you come to them.
+  const roll = rng.next();
+  c.opKind =
+    c.enemyDoctrine === 'defensive'
+      ? (roll < 0.6 ? 'their-ground' : roll < 0.8 ? 'assault' : 'defense')
+      : c.enemyDoctrine === 'rash'
+        ? (roll < 0.5 ? 'assault' : roll < 0.85 ? 'defense' : 'their-ground')
+        : (roll < 0.4 ? 'assault' : roll < 0.7 ? 'their-ground' : 'defense');
+  c.objectiveText =
+    c.opKind === 'defense'
+      ? `Hold ${c.placeName} against the enemy's advance until nightfall. If the position falls, the road behind it falls with it.`
+      : c.opKind === 'their-ground'
+        ? `${era.objective(c.placeName)} The enemy has fortified good ground and does not intend to move. You will have to go and take it from him.`
+        : era.objective(c.placeName);
+  addLog(c, 'event',
+    c.opKind === 'defense'
+      ? 'This time the enemy is coming to you. The ground you choose to stand on will be the whole battle.'
+      : c.opKind === 'their-ground'
+        ? 'The scouts agree: he has picked his ground and grown roots. Waiting for him to blunder is a plan; it is not a good one; the ruler is counting days.'
+        : 'The armies will meet in open country. The usual rules: whoever blinks first, in front of everyone.',
+    true);
   // the army resets what rest can reset, keeps what it cannot forget
   c.food = Math.min(14, c.food + 9);
   c.supplies = clamp(c.supplies + 25);
@@ -890,4 +952,63 @@ export function nextOperation(c: CampaignState, survivors: Record<string, number
   addLog(c, 'event', `${era.strategicOrder(c.placeName, c.rulerName)}`, true);
   addLog(c, 'logistics', `The army takes the road again — thinner, harder, and carrying its memories with it. Operation ${c.operation} of the war begins.`);
   personalNextOperation(c);
+}
+
+// ============================================================ a new war
+// The saga: years have passed (the interlude handled the family), a new
+// enemy army musters, and the general takes the field again — older,
+// carrying his best officers and everything he knows about them.
+
+export function newWar(old: CampaignState): CampaignState {
+  const warNo = old.personal.career.warsFought; // interlude already advanced it
+  const c = newCampaign(old.era, (old.seed + warNo * 7907) >>> 0);
+  // the man and his family persist
+  c.personal = old.personal;
+  // your standing reflects the career, not a blank slate
+  c.rulerPatience = old.warOver === 'triumph' ? 70 : 42;
+  // carry over your most trusted living officers — the ones you KNOW.
+  // This is where the long game pays: observations ride along.
+  const carried = old.officers
+    .filter((o) => !o.dead && !o.familyId)
+    .sort((a, b) => b.traits.trust - a.traits.trust)
+    .slice(0, 3);
+  carried.forEach((vet, i) => {
+    vet.id = `vet-w${warNo}-${i}`;
+    vet.perf = { ordersReceived: 0, faithful: 0, deviations: 0, heroics: 0, blunders: 0 };
+    vet.confidence = 60;
+    vet.wounded = false;
+    vet.playerEndorsed = false;
+    vet.honorSlighted = false;
+    vet.grudges = []; // the old enemies went home; the new ones are strangers
+    vet.rivalId = undefined;
+    if (!vet.deeds.includes('Followed you into a second war.')) {
+      vet.deeds.push('Followed you into a second war.');
+    }
+    c.officers[i] = vet; // replaces a freshly generated stranger
+  });
+  // a son who held a commission keeps it
+  const sonOfficers = old.officers.filter((o) => !o.dead && o.familyId);
+  for (const son of sonOfficers) {
+    son.perf = { ordersReceived: 0, faithful: 0, deviations: 0, heroics: 0, blunders: 0 };
+    son.confidence = 62;
+    son.wounded = false;
+    son.grudges = [];
+    c.officers.push(son);
+  }
+  // kin-by-marriage ties survive the years
+  for (const o of c.officers) {
+    const wed = c.personal.family.find((f) => f.role === 'wed-officer' && f.weddedTo === o.id);
+    if (wed) o.kinById = wed.id;
+  }
+  // a daughter at court is a standing asset
+  if (c.personal.arcFlags.includes('saga:court-daughter')) {
+    c.rulerPatience = clamp(c.rulerPatience + 8);
+    addLog(c, 'personal', 'Your daughter\'s letters from the capital arrive before your orders do: who is for you, who is against you, and which of the against can be bought with a dinner. You march better-armed at court than you ever have.');
+  }
+  addLog(c, 'command', `You take the field for the ${ordinalLabel(warNo + 1)} time. ${carried.length ? `${carried.map((o) => `${o.title} ${shortName(o.name)}`).join(', ')} follow${carried.length === 1 ? 's' : ''} you from the last war — men whose measure you have already taken.` : 'None of your old officers could be persuaded back; the roster is strangers.'}`, true);
+  return c;
+}
+
+function ordinalLabel(n: number): string {
+  return ['zeroth', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth'][n] ?? `${n}th`;
 }

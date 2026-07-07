@@ -199,17 +199,34 @@ function EngagementModal({ campaign }: { campaign: CampaignState }) {
 // feeds (resolve) reaches the battlefield as the clarity of your orders.
 function HearthPanel({ campaign }: { campaign: CampaignState }) {
   const p = campaign.personal;
+  const atHome = p.family.filter((f) => f.role === 'child');
   const lines: { text: string; tone?: 'warm' | 'cold' }[] = [];
   if (p.situation === 'home' && p.spouseName) {
     lines.push({
-      text: `${p.spouseName} keeps the household${p.children.length ? `, with ${p.children.map((c) => c.name).join(' and ')}` : ''}. ${bondWord(p.spouseBond)}`,
+      text: `${p.spouseName} keeps the household${atHome.length ? `, with ${atHome.map((c) => c.name).join(' and ')}` : ''}. ${bondWord(p.spouseBond)}`,
     });
   } else if (p.situation === 'camp' && p.spouseName) {
     lines.push({
-      text: `${p.spouseName}${p.children.length ? ` and the children` : ''} travel with the baggage train. ${bondWord(p.spouseBond)}`,
+      text: `${p.spouseName}${atHome.length ? ` and the children` : ''} travel with the baggage train. ${bondWord(p.spouseBond)}`,
     });
   } else if (p.situation === 'alone') {
     lines.push({ text: 'No one waits behind you. The court finds this suspicious; you find it quiet.' });
+  }
+  const aide = p.family.find((f) => f.role === 'aide');
+  if (aide) {
+    lines.push({ text: `${aide.name}, ${aide.age}, serves on your staff. Your orders leave the tent through his hands, checked and legible.`, tone: 'warm' });
+  }
+  const sonOfficer = p.family.find((f) => f.role === 'junior-officer');
+  if (sonOfficer) {
+    lines.push({ text: `${sonOfficer.name} holds a command of his own. Every dispatch from his wing, you read twice.`, tone: 'warm' });
+  }
+  const wedded = p.family.find((f) => f.role === 'wed-officer');
+  if (wedded) {
+    const husband = campaign.officers.find((o) => o.id === wedded.weddedTo);
+    if (husband && !husband.dead) lines.push({ text: `${wedded.name} is wed to ${husband.title} ${shortName(husband.name)} — one of your officers is kin now.` });
+  }
+  if (p.career.warsFought > 0) {
+    lines.push({ text: `You are ${p.career.age}, ${p.career.warsFought} ${p.career.warsFought === 1 ? 'war' : 'wars'} behind you, ${p.career.warsWon} of them won.` });
   }
   if (p.familyCaptured) {
     lines.push({ text: 'Your family is in enemy hands. Every decision is written in two ledgers now.', tone: 'cold' });

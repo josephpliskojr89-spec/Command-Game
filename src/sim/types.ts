@@ -53,6 +53,9 @@ export interface Officer {
   fresh?: boolean;    // a replacement — no track record at all
   playerEndorsed?: boolean; // you blessed his plan at the council (this battle)
   honorSlighted?: boolean;  // given a post beneath his pride (this battle)
+  familyId?: string;        // this officer is YOUR BLOOD — a son with a command
+  kinById?: string;         // married into your family (a son-in-law)
+  awaitingConfirm?: { type: OrderType; tick: number }; // he asked; answer him
   // battle bookkeeping for the after-action report
   perf: {
     ordersReceived: number;
@@ -252,6 +255,15 @@ export interface EnemyPlan {
   flankSide: 'left' | 'right'; // where their cavalry swings
   aggression: number; // 0..100
   commanderName: string;
+  doctrine: Doctrine;
+  opKind: OpKind;
+  // the feigned flight: a cunning commander's trap for your eager officers
+  feint?: {
+    unitId: string;
+    state: 'armed' | 'running' | 'sprung';
+    startTick?: number;
+  };
+  counterpunch?: boolean; // defensive doctrine: advance only when you commit
 }
 
 export interface BattleState {
@@ -278,6 +290,11 @@ export interface BattleState {
   signalSounded?: boolean;  // the horns have blown (attack-on-signal trigger)
   campSacked?: boolean;     // the enemy got into YOUR camp
   lootingHappened?: boolean; // your men got into THEIRS and stopped fighting
+  playerCrossedMid?: boolean; // has any friendly formation contested the field?
+  enemyDeclined?: boolean;    // the enemy refused to assault a turtled line
+  enemyEscalated?: boolean;   // night approaching, the enemy went all in
+  generalWounded?: boolean;   // the banner has a body, and it bleeds
+  hornsHeardByEnemy?: boolean;
 }
 
 // ---------------------------------------------------------------- campaign
@@ -308,16 +325,57 @@ export type Phase =
   | 'camp'
   | 'deployment'
   | 'battle'
-  | 'after-action';
+  | 'after-action'
+  | 'interlude'; // the years between wars
+
+// How the enemy commander fights. Doctrines exist so no single player
+// strategy works twice.
+export type Doctrine = 'rash' | 'cunning' | 'defensive' | 'methodical';
+
+// What kind of operation this is. Variety is the enemy of solvability.
+export type OpKind =
+  | 'assault'       // classic meeting battle: they will come at you
+  | 'defense'       // hold the position until dark, against the odds
+  | 'their-ground'; // they hold good ground and dare you to take it
+
+// What the enemy learned about YOU from the last battle.
+export interface EnemyMemory {
+  cavSide?: 'left' | 'right'; // where your cavalry did its work
+  usedSignal?: boolean;       // you fight with prepared strokes
+  playerPassive?: boolean;    // you like to receive the attack
+}
 
 // ---------------------------------------------------------------- personal
 
 // The general is a person. What he carries in his chest arrives on the
 // battlefield in the clarity of his orders.
 
-export interface Child {
+// Family members are dynamic: they age between wars, take roles in your
+// army, marry into your officer corps or the court, and can be lost.
+export type FamilyRole =
+  | 'child'          // too young for anything but being missed
+  | 'aide'           // a son on your staff: your orders gain his hands
+  | 'junior-officer' // a son with a command of his own — and your name
+  | 'wed-officer'    // a daughter married into your officer corps
+  | 'wed-court'      // a daughter married into the capital
+  | 'fallen';
+
+export interface FamilyMember {
+  id: string;
   name: string;
+  sex: 'm' | 'f';
   age: number;
+  role: FamilyRole;
+  weddedTo?: string; // officer id, or a court name
+  notes: string[];   // their small history, in prose
+}
+
+// The general has a career now: wars accumulate, years pass, children grow.
+export interface Career {
+  age: number;        // the general's age
+  warsFought: number;
+  warsWon: number;
+  chronicle: string[]; // one line per war
 }
 
 export interface Romance {
@@ -336,7 +394,9 @@ export interface PersonalState {
   situation: HouseholdChoice;
   spouseName?: string;
   spouseBond: number; // 0..100 (meaningless if unmarried)
-  children: Child[];
+  family: FamilyMember[];
+  career: Career;
+  aideId?: string; // family member currently serving as your aide
   romance?: Romance;
   // The load-bearing number: the general's inner steadiness. It feeds
   // directly into the clarity of every order he writes.
@@ -391,6 +451,10 @@ export interface CampaignState {
   officers: Officer[];
   enemyOfficers: EnemyOfficer[];
   enemyCavSide: 'left' | 'right'; // the truth, decided now, revealed maybe
+  enemyDoctrine: Doctrine;
+  opKind: OpKind;
+  enemyMemory: EnemyMemory; // what they learned from your last battle
+  forageDays?: number;      // the country gets eaten out
   log: Report[];
   pendingEvent?: CampaignEvent;
   pendingEngagement?: Engagement;
@@ -426,6 +490,7 @@ export interface GameState {
   assignments?: Record<string, string>; // formationId -> officerId
   personalCommand?: string; // formationId or 'hq'
   aar?: AfterAction;
+  interlude?: { years: number; beats: string[]; aideCandidateId?: string };
 }
 
 export interface OfficerVerdict {
