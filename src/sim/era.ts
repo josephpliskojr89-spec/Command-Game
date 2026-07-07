@@ -24,6 +24,8 @@ export interface Era {
   officerNames: string[];
   enemyName: string;
   enemyCommander: string;
+  enemyOfficerNames: string[];
+  enemyOfficerTitle: string;
   placeNames: string[];
   unitNames: Record<'heavy' | 'line' | 'cavalry' | 'ranged' | 'reserve', string>;
   formationLabels: Record<'center' | 'left' | 'right' | 'cavalry' | 'ranged' | 'reserve', string>;
@@ -61,6 +63,8 @@ export const ERAS: Record<EraId, Era> = {
     ],
     enemyName: 'the Samnite host',
     enemyCommander: 'Gellius the Samnite',
+    enemyOfficerNames: ['Statius Trebius', 'Numerius Decimius', 'Ovius Paccius', 'Herennius Pontius', 'Marius Egnatius'],
+    enemyOfficerTitle: 'the Samnite captain',
     placeNames: ['the Caudine valley', 'the ford at Aufidena', 'the plain of Luceria'],
     unitNames: {
       heavy: 'First Cohorts',
@@ -99,6 +103,8 @@ export const ERAS: Record<EraId, Era> = {
     ],
     enemyName: 'the Danish raiding army',
     enemyCommander: 'Guthrum Longspear',
+    enemyOfficerNames: ['Halfdan Ironbeard', 'Sidroc the Old', 'Oscytel', 'Harald Wartooth', 'Ubba Ravenson'],
+    enemyOfficerTitle: 'the Danish war-leader',
     placeNames: ['the ford at Eashing', 'the downs above Wilton', 'the river-meadows at Fearnham'],
     unitNames: {
       heavy: 'Hearth-Troop Shieldwall',
@@ -137,6 +143,8 @@ export const ERAS: Record<EraId, Era> = {
     ],
     enemyName: 'the Saxon levy-army',
     enemyCommander: 'Ealdorman Ceolwulf',
+    enemyOfficerNames: ['Thegn Aescwine', 'Thegn Beorhtric', 'Eadwulf the Red', 'Reeve Cynewulf', 'Thegn Ordgar'],
+    enemyOfficerTitle: 'the Saxon thegn',
     placeNames: ['the burh at Readingum', 'the hill of the old fort', 'the crossing at Sceaftesige'],
     unitNames: {
       heavy: 'Hirdmen',
@@ -176,6 +184,8 @@ export const ERAS: Record<EraId, Era> = {
     ],
     enemyName: 'the rebel host',
     enemyCommander: 'Earl Morcar',
+    enemyOfficerNames: ['Hereward', 'Thurkill of Limis', 'Siward Barn', 'Godric the Steward', 'Aethelwine of Dereham'],
+    enemyOfficerTitle: 'the rebel captain',
     placeNames: ['the marsh-edge at Elyham', 'the ridge of Stanfeld', 'the bridge at Pontfract'],
     unitNames: {
       heavy: 'Dismounted Knights',
@@ -215,6 +225,8 @@ export const ERAS: Record<EraId, Era> = {
     ],
     enemyName: 'the Count’s invading army',
     enemyCommander: 'Count Amaury',
+    enemyOfficerNames: ['Sir Enguerrand de Vielmont', 'Sir Baldric the Younger', 'Guy de Chastelet', 'Sir Renaud Coeur-de-Fer', 'Amalric of the March'],
+    enemyOfficerTitle: 'the Count’s banneret',
     placeNames: ['the vale of Merleburh', 'the ford at Stokebrigge', 'the heath below Caldwell'],
     unitNames: {
       heavy: 'Men-at-Arms',

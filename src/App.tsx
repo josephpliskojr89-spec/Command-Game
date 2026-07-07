@@ -18,6 +18,7 @@ export function App() {
         {era && game.campaign && (
           <span className="sub">
             {era.label} · you are {era.generalTitle} of the army of {game.campaign.rulerName}
+            {game.campaign.operation > 1 && ` · operation ${game.campaign.operation} of the war`}
           </span>
         )}
       </div>

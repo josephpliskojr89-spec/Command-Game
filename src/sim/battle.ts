@@ -5,12 +5,13 @@
 import { makeRng, type Rng } from './rng.ts';
 import { ERAS, FORMATIONS, type Era } from './era.ts';
 import {
-  interpretOrder, officerAutonomy, orderClarity, shortName, orderVerb,
-  type InterpretContext,
+  addGrudge, interpretOrder, observe, officerAutonomy, orderClarity,
+  shortName, orderVerb, type InterpretContext,
 } from './officer.ts';
 import type {
-  ActiveOrder, BattleState, CampaignState, KnownEnemy, Messenger, Officer,
-  OrderType, PlayerOrder, Report, TerrainFeature, Unit, UnitClass, Urgency,
+  ActiveOrder, BattleState, CampaignState, Grudge, KnownEnemy, Messenger,
+  Officer, OrderType, PlayerOrder, Report, TerrainFeature, Unit, UnitClass,
+  Urgency,
 } from './types.ts';
 
 export const MAP_W = 1200;
@@ -130,10 +131,12 @@ export function setupBattle(
   const era = ERAS[campaign.era];
   const terrain = makeTerrain(rng.fork(3));
 
+  const blooded = campaign.veteranBlood ?? 0; // survivors of past fields
+  const hungry = campaign.food < 3;
   const condition = {
-    morale: clamp(40 + campaign.morale * 0.55),
-    fatigue: clamp(campaign.fatigue * 0.8),
-    cohesion: clamp(30 + campaign.cohesion * 0.6),
+    morale: clamp(40 + campaign.morale * 0.55 + blooded * 0.1 - (hungry ? 7 : 0)),
+    fatigue: clamp(campaign.fatigue * 0.8 + (hungry ? 8 : 0)),
+    cohesion: clamp(30 + campaign.cohesion * 0.6 + blooded * 0.1),
   };
 
   // Friendly formations at default deployment slots; the player can
@@ -147,23 +150,29 @@ export function setupBattle(
     'f-reserve': { x: 600, y: 720 },
   };
   const units: Unit[] = FORMATIONS.map((f) => {
+    const carried = campaign.unitStrength?.[f.id];
+    const strength = carried ?? f.men;
     const u = baseUnit(
       f.id, 'friend', era.unitNames[f.nameKey], f.cls,
-      Math.max(100, f.men - Math.round(campaign.stragglers * (f.men / 4300))),
+      Math.max(100, strength - Math.round(campaign.stragglers * (strength / 4300))),
       slots[f.id].x, slots[f.id].y, condition,
     );
     u.officerId = assignments[f.id];
+    u.training = 60 + Math.round(blooded * 0.3);
+    u.hungry = hungry;
     return u;
   });
 
   // Enemy army: strength matches what campaign.enemyEstimate() was built on.
-  const enemyTotal = 4200 + rng.int(-400, 600);
+  // Later operations bring a warier, reinforced enemy.
+  const enemyTotal = 4200 + rng.int(-400, 600) + (campaign.operation - 1) * 150;
   const enemyCond = { morale: 62 + rng.int(-6, 8), fatigue: 20 + rng.int(0, 15), cohesion: 62 + rng.int(-8, 8) };
+  const cavX = campaign.enemyCavSide === 'left' ? 160 : 1050; // truth, decided on the march
   const eSplit: [string, UnitClass, number, number, number][] = [
     ['e-center', 'infantry', 0.28, 600, 130],
     ['e-left', 'infantry', 0.19, 350, 145],
     ['e-right', 'infantry', 0.19, 850, 145],
-    ['e-cavalry', 'cavalry', 0.10, rng.chance(0.5) ? 160 : 1050, 170],
+    ['e-cavalry', 'cavalry', 0.10, cavX, 170],
     ['e-ranged', 'ranged', 0.12, 600, 185],
     ['e-reserve', 'infantry', 0.12, 600, 80],
   ];
@@ -175,8 +184,21 @@ export function setupBattle(
     'e-ranged': `${era.enemyName} — skirmishers`,
     'e-reserve': `${era.enemyName} — reserve`,
   };
+  // The enemy's named officers hold its commands: the boldest gets the
+  // horse, the ablest the main body. Their temperaments will show.
+  const foes = campaign.enemyOfficers.filter((o) => !o.dead);
+  const byAggression = [...foes].sort((a, b) => b.traits.aggression - a.traits.aggression);
+  const byCompetence = [...foes].sort((a, b) => b.traits.competence - a.traits.competence);
+  const enemyCommandMap: Record<string, string | undefined> = {
+    'e-cavalry': byAggression[0]?.id,
+    'e-center': byCompetence[0]?.id,
+    'e-right': byAggression[1]?.id,
+    'e-left': byCompetence[1]?.id,
+    'e-reserve': foes[4]?.id ?? foes[0]?.id,
+  };
   for (const [id, cls, frac, x, y] of eSplit) {
     const u = baseUnit(id, 'enemy', enemyNames[id], cls, Math.round(enemyTotal * frac), x + rng.int(-25, 25), y, enemyCond);
+    u.officerId = enemyCommandMap[id];
     units.push(u);
   }
 
@@ -194,6 +216,25 @@ export function setupBattle(
       identified: campaign.intel > 55 || rng.chance(campaign.intel / 100),
     };
   }
+  // The council's word about the enemy horse overrides the scouts' guess.
+  // If the man you endorsed was right, your picture sharpens. If he was
+  // wrong, your map now confidently shows their cavalry on the wrong wing.
+  if (campaign.cavHint) {
+    known['e-cavalry'] = {
+      unitId: 'e-cavalry',
+      x: campaign.cavHint === 'left' ? 180 : 1030,
+      y: 175 + rng.range(-20, 20),
+      seenTick: 0,
+      visibleNow: false,
+      identified: true,
+    };
+  }
+
+  // The enemy commander's temperament (and his cavalry captain's) shape
+  // the plan: bold captains commit earlier and harder.
+  const cavCaptain = campaign.enemyOfficers.find((o) => o.id === enemyCommandMap['e-cavalry']);
+  const centerCaptain = campaign.enemyOfficers.find((o) => o.id === enemyCommandMap['e-center']);
+  const planAggression = clamp(45 + rng.int(0, 25) + ((cavCaptain?.traits.aggression ?? 50) - 50) * 0.4);
 
   const bs: BattleState = {
     tick: 0,
@@ -208,14 +249,15 @@ export function setupBattle(
     playerUnitId: personalCommand === 'hq' ? undefined : personalCommand,
     enemyPlan: {
       phase: 'waiting',
-      advanceTick: rng.int(25, 70),
-      flankSide: (eSplit[3][3] as number) < 600 ? 'left' : 'right',
-      aggression: 45 + rng.int(0, 40),
+      advanceTick: rng.int(25, 70) - Math.round(((centerCaptain?.traits.aggression ?? 50) - 50) / 4),
+      flankSide: campaign.enemyCavSide,
+      aggression: planAggression,
       commanderName: era.enemyCommander,
     },
     nextId: 1,
     weather: campaign.weather,
-    seed: campaign.seed,
+    seed: campaign.seed + campaign.operation * 7919, // new field, new dice
+    grudgesSighted: [],
   };
 
   if (bs.playerUnitId) {
@@ -228,7 +270,32 @@ export function setupBattle(
   report(bs, 'command', 0, bs.hqPos, `The army is drawn up. ${era.generalTitle}'s banner stands ${bs.playerUnitId ? `with the ${unit(bs, bs.playerUnitId)!.name}` : 'at headquarters'}.`, true);
   if (campaign.weather === 'fog') report(bs, 'scout', 0, bs.hqPos, 'Fog hangs over the field. You will fight half-blind, and so will they.', true);
   if (campaign.weather === 'rain') report(bs, 'scout', 0, bs.hqPos, 'Rain falls steadily. Bowstrings slacken and the ground is turning to paste.');
+  if (campaign.weather === 'heat') report(bs, 'scout', 0, bs.hqPos, 'The sun is already brutal. Whoever stands in armor longest today loses something for it.');
+  if (hungry) report(bs, 'logistics', 0, bs.hqPos, 'The men went into line on empty stomachs. It shows in the way they stand.', true);
+  if (campaign.cavHint) report(bs, 'scout', 0, bs.hqPos, `The council's word stands on your map: the enemy horse is expected on your ${campaign.cavHint}.`);
   return bs;
+}
+
+// Called once when the battle actually begins: where each man was placed
+// in the line is a statement about his worth, and they all heard it.
+export function applyDeploymentPolitics(bs: BattleState, campaign: CampaignState): void {
+  const honorable: Record<string, number> = {
+    'f-center': 2, 'f-cavalry': 2, 'f-right': 1, 'f-left': 1, 'f-ranged': 0, 'f-reserve': 0,
+  };
+  for (const u of bs.units) {
+    if (u.side !== 'friend' || !u.officerId) continue;
+    const o = campaign.officers.find((x) => x.id === u.officerId);
+    if (!o || o.dead) continue;
+    const honor = honorable[u.id] ?? 1;
+    if (honor === 2 && o.traits.pride > 55) {
+      o.confidence = clamp(o.confidence + 6);
+    } else if (honor === 0 && o.traits.pride > 65) {
+      o.honorSlighted = true;
+      o.confidence = clamp(o.confidence - 8);
+      report(bs, 'command', 0, bs.hqPos,
+        `${o.title} ${shortName(o.name)} takes his place with the ${u.name} without a word. For a man of his pride, the rear ranks are a sentence, and everyone in the council heard you pass it.`, true, true);
+    }
+  }
 }
 
 export function unit(bs: BattleState, id: string): Unit | undefined {
@@ -300,6 +367,49 @@ export function issuePlayerOrder(
   report(bs, 'messenger', bs.tick, from, `A ${era.messengerWord} gallops off to the ${u.name}: ${orderVerb(type)}${urgency === 'urgent' ? ', with all haste' : ''}.`, false, true);
 }
 
+// The horns: instant, army-wide, and crude. Every formation standing under
+// an "attack when signaled" order decides — right now, each by its own
+// lights — whether it heard you and what you meant.
+export function soundSignal(bs: BattleState, campaign: CampaignState): void {
+  if (bs.signalSounded) return;
+  bs.signalSounded = true;
+  const from = playerPosition(bs);
+  report(bs, 'command', bs.tick, from, 'You give the word. The horns sound — one long blast, two short — and the sound rolls across the whole field. Now you find out who was listening.', true, true);
+  event(bs, 'signal', 'The general sounded the attack signal.');
+  const rng = makeRng(bs.seed).fork(70000 + bs.tick);
+  for (const u of bs.units) {
+    if (u.side !== 'friend' || u.routed || u.status === 'routing' || u.status === 'looting') continue;
+    if (u.order.type !== 'attack-on-signal' && u.pendingOrder?.order.type !== 'attack-on-signal') continue;
+    const standing = u.order.type === 'attack-on-signal' ? u.order : u.pendingOrder!.order;
+    const officer = campaign.officers.find((o) => o.id === u.officerId);
+    // can they even hear it? distance, woods, weather, and the din of melee
+    const d = dist(u, from);
+    const fx = terrainAt(bs.terrain, u.x, u.y);
+    let hearChance = 0.97 - d / 2200;
+    if (bs.weather === 'rain') hearChance -= 0.1;
+    if (fx.concealed) hearChance -= 0.12;
+    if (u.playerLed) hearChance = 1;
+    if (!rng.chance(Math.max(0.4, hearChance))) {
+      report(bs, 'command', bs.tick, from, `No movement from the ${u.name}. Either the horns did not carry that far — or they are choosing not to hear them.`, true, true);
+      event(bs, 'signal-missed', `The ${u.name} did not respond to the signal.`, u.officerId, u.id);
+      continue;
+    }
+    // they heard it; the officer decides how hard to come
+    const eager = officer && !officer.dead && (officer.traits.aggression > 60 || activeGrudge(bs, officer, u, 400));
+    u.order = {
+      type: u.cls === 'cavalry' || eager ? 'charge' : 'advance',
+      target: standing.target,
+      targetUnitId: standing.targetUnitId,
+      sinceTick: bs.tick,
+      source: 'player',
+      note: 'released by signal',
+    };
+    u.pendingOrder = undefined;
+    const who = officer && !officer.dead ? `${officer.title} ${shortName(officer.name)}` : 'Its officer';
+    report(bs, 'officer', bs.tick, u, `${who} hears the horns. The ${u.name} come off their mark like a held breath released.`, true);
+  }
+}
+
 export function orderGeneralWithdrawal(bs: BattleState, campaign: CampaignState): void {
   bs.withdrawalOrdered = true;
   for (const u of bs.units) {
@@ -319,15 +429,186 @@ export function battleTick(bs: BattleState, campaign: CampaignState): void {
 
   stepMessengers(bs, campaign, rng.fork(1));
   startPendingOrders(bs);
-  enemyCommander(bs, rng.fork(2));
+  enemyCommander(bs, campaign, rng.fork(2));
   officerMoments(bs, campaign, rng.fork(3));
   moveUnits(bs, rng.fork(4));
   missileFire(bs, rng.fork(5));
-  meleeCombat(bs, rng.fork(6));
+  meleeCombat(bs, campaign, rng.fork(6));
+  officerCasualties(bs, campaign, rng.fork(10));
   moraleAndRouts(bs, campaign, rng.fork(7));
   updateVisibility(bs);
-  ambientReports(bs, rng.fork(8));
+  grudgeSightings(bs, campaign);
+  lootMadness(bs, campaign, rng.fork(11));
+  campThreat(bs, campaign, rng.fork(12));
+  ambientReports(bs, campaign, rng.fork(8));
   checkEnd(bs, campaign, rng.fork(9));
+}
+
+// -------------------------------------------------------- grudge sightings
+
+// When a man's personal enemy shows his banner, the whole army hears
+// about it before you do.
+function grudgeSightings(bs: BattleState, campaign: CampaignState) {
+  for (const u of bs.units) {
+    if (u.side !== 'friend' || u.routed || !u.officerId) continue;
+    const officer = campaign.officers.find((o) => o.id === u.officerId);
+    if (!officer || !officer.grudges.length) continue;
+    for (const g of officer.grudges) {
+      const key = `${officer.id}:${g.enemyOfficerId}`;
+      if (bs.grudgesSighted.includes(key)) continue;
+      const enemyUnit = bs.units.find((e) => e.side === 'enemy' && e.officerId === g.enemyOfficerId && !e.routed);
+      if (!enemyUnit) continue;
+      const k = bs.known[enemyUnit.id];
+      if (!k || !k.visibleNow || !k.identified || dist(u, enemyUnit) > 420) continue;
+      bs.grudgesSighted.push(key);
+      const who = `${officer.title} ${shortName(officer.name)}`;
+      const line = g.kind === 'triumph'
+        ? `${who} has sighted ${g.enemyName}'s banner across the field. He is smiling. He has beaten that man before.`
+        : g.kind === 'blood'
+          ? `${who} has sighted ${g.enemyName}'s banner — the man who nearly killed him. His officers say he has gone very quiet.`
+          : `${who} has sighted ${g.enemyName}'s banner — the man who humiliated him. Watch that wing.`;
+      report(bs, 'officer', bs.tick, u, line, true);
+      event(bs, 'grudge-sighted', `${who} found ${g.enemyName} across the field.`, officer.id, u.id);
+    }
+  }
+}
+
+// Find the active grudge for an officer given what he can currently see.
+function activeGrudge(bs: BattleState, officer: Officer, u: Unit, range: number): { grudge: Grudge; enemyUnit: Unit } | undefined {
+  for (const g of officer.grudges) {
+    const enemyUnit = bs.units.find((e) => e.side === 'enemy' && e.officerId === g.enemyOfficerId && !e.routed);
+    if (!enemyUnit) continue;
+    const k = bs.known[enemyUnit.id];
+    if (k?.identified && dist(u, enemyUnit) < range) return { grudge: g, enemyUnit };
+  }
+  return undefined;
+}
+
+// -------------------------------------------------------- officer casualties
+
+// Officers die at the front. Brave ones lead from it.
+function officerCasualties(bs: BattleState, campaign: CampaignState, rng: Rng) {
+  for (const u of bs.units) {
+    if (u.routed || u.status !== 'fighting' || u.officerDown) continue;
+    if (u.side === 'friend') {
+      if (u.playerLed) {
+        // your guards keep you alive; the near-misses keep you honest
+        if (rng.chance(0.0012)) {
+          report(bs, 'combat', bs.tick, u, 'A spear glances off your shield-bearer. The men nearest you saw how close that was — so did you.', true, true);
+        }
+        continue;
+      }
+      const officer = campaign.officers.find((o) => o.id === u.officerId);
+      if (!officer || officer.dead) continue;
+      const risk = 0.0009 * (officer.traits.courage / 60); // the brave die forward
+      if (!rng.chance(risk)) continue;
+      const killed = rng.chance(0.35);
+      const who = `${officer.title} ${shortName(officer.name)}`;
+      u.officerDown = killed ? 'dead' : 'wounded';
+      u.morale = clamp(u.morale - (killed ? 16 : 10));
+      u.cohesion = clamp(u.cohesion - 12);
+      if (killed) {
+        officer.dead = true;
+        report(bs, 'combat', bs.tick, u, `${who} is DOWN — killed at the front of the ${u.name}. An under-officer has the banner. The formation is holding, for now, on habit alone.`, true);
+        event(bs, 'officer-killed', `${who} was killed leading the ${u.name}.`, officer.id, u.id);
+      } else {
+        officer.wounded = true;
+        report(bs, 'combat', bs.tick, u, `${who} has been carried out of the line of the ${u.name}, bleeding but alive. His second is a man you know nothing about.`, true);
+        event(bs, 'officer-wounded', `${who} was wounded leading the ${u.name}.`, officer.id, u.id);
+      }
+    } else {
+      // enemy captains die too — and your men can feel it happen
+      const foe = campaign.enemyOfficers.find((o) => o.id === u.officerId);
+      if (!foe || foe.dead) continue;
+      if (!rng.chance(0.0006)) continue;
+      foe.dead = true;
+      u.officerDown = 'dead';
+      u.morale = clamp(u.morale - 14);
+      report(bs, 'combat', bs.tick, u, `A shout goes down the enemy line — ${foe.name}'s banner has fallen. Their ${u.name.split('—').pop()?.trim() ?? 'formation'} is suddenly a crowd with weapons.`, true);
+      event(bs, 'enemy-officer-killed', `${foe.name} fell in the press.`, undefined, u.id);
+      // whoever was fighting him claims the deed
+      const killer = u.engagedWith ? unit(bs, u.engagedWith) : undefined;
+      const killerOfficer = killer?.officerId ? campaign.officers.find((o) => o.id === killer.officerId) : undefined;
+      if (killerOfficer && !killerOfficer.dead) {
+        killerOfficer.deeds.push(`His men brought down ${foe.name} in the melee.`);
+        addGrudge(killerOfficer, { enemyOfficerId: foe.id, enemyName: foe.name, kind: 'triumph', note: `Brought down ${foe.name} in battle.` });
+      }
+    }
+  }
+}
+
+// -------------------------------------------------------- loot madness
+
+// Victorious soldiers near an undefended camp remember every promise you
+// made them. Battles of this age were lost at the moment of victory.
+function lootMadness(bs: BattleState, campaign: CampaignState, rng: Rng) {
+  if (bs.tick % 5 !== 0) return;
+  const enemyCamp = bs.terrain.find((t) => t.kind === 'enemy-camp');
+  if (!enemyCamp) return;
+  const enemyFaltering = bs.enemyPlan.phase === 'breaking' || lossFraction(bs, 'enemy') > 0.3;
+
+  for (const u of bs.units) {
+    if (u.side !== 'friend' || u.routed) continue;
+    if (u.status === 'looting') {
+      if (bs.tick >= (u.lootingUntil ?? 0)) {
+        u.status = 'holding';
+        u.cohesion = clamp(u.cohesion - 12);
+        u.order = { type: 'hold', sinceTick: bs.tick, source: 'officer', note: 'reformed after looting' };
+        report(bs, 'officer', bs.tick, u, `The officers have finally beaten the ${u.name} back into ranks, laden and unrepentant. The moment they might have been used is long gone.`);
+      }
+      continue;
+    }
+    if (!enemyFaltering || u.status === 'fighting') continue;
+    const inCamp =
+      u.x > enemyCamp.x - 25 && u.x < enemyCamp.x + enemyCamp.w + 25 &&
+      u.y > enemyCamp.y - 25 && u.y < enemyCamp.y + enemyCamp.h + 40;
+    if (!inCamp) continue;
+    let failChance = 0.12;
+    if (campaign.plunderPromised) failChance = 0.5; // your own words, redeemed
+    if (campaign.disciplineTone > 60) failChance += 0.12;
+    if (campaign.disciplineTone < 40) failChance *= 0.5;
+    failChance *= 1 - (u.discipline / 200);
+    if (u.playerLed) failChance *= 0.25; // your presence holds them — barely
+    if (rng.chance(failChance)) {
+      u.status = 'looting';
+      u.lootingUntil = bs.tick + rng.int(70, 130);
+      u.pendingOrder = undefined;
+      u.engagedWith = undefined;
+      bs.lootingHappened = true;
+      report(bs, 'morale', bs.tick, u,
+        campaign.plunderPromised
+          ? `The ${u.name} have reached the enemy camp — and stopped. You promised them this. They are collecting.`
+          : `The ${u.name} have broken into the enemy tents. Their officers are laying about with the flat of the sword and it is doing nothing.`,
+        true);
+      event(bs, 'looting', `${u.name} stopped to plunder the enemy camp${campaign.plunderPromised ? ' — as promised' : ''}.`, u.officerId, u.id);
+    }
+  }
+}
+
+// -------------------------------------------------------- the camp behind you
+
+// A threat to the baggage dissolves armies faster than casualties do.
+function campThreat(bs: BattleState, campaign: CampaignState, rng: Rng) {
+  if (bs.campSacked) return;
+  const camp = bs.terrain.find((t) => t.kind === 'camp');
+  if (!camp) return;
+  const cx = camp.x + camp.w / 2, cy = camp.y + camp.h / 2;
+  const intruder = bs.units.find(
+    (u) => u.side === 'enemy' && !u.routed && u.status !== 'routing' && dist(u, { x: cx, y: cy }) < 110,
+  );
+  if (!intruder) return;
+  bs.campSacked = true;
+  const fortified = campaign.fortifiedCamp;
+  const drain = fortified ? 6 : 11;
+  for (const u of bs.units) {
+    if (u.side === 'friend' && !u.routed) u.morale = clamp(u.morale - drain);
+  }
+  report(bs, 'morale', bs.tick, { x: cx, y: cy },
+    fortified
+      ? 'The enemy is at the camp — but the ditch and bank are holding them among the wagons. The men keep glancing over their shoulders anyway.'
+      : 'The enemy is IN the camp. Your camp followers are fleeing down the road, and every man in the line can hear the baggage being taken apart behind him.',
+    true);
+  event(bs, 'camp-threatened', 'The enemy reached the army\'s camp and baggage.');
 }
 
 // ---------------------------------------------------------------- messengers
@@ -402,6 +683,24 @@ function deliverOrder(bs: BattleState, campaign: CampaignState, m: Messenger, rn
     report(bs, 'messenger', bs.tick, u, `The ${ERAS[campaign.era].messengerWord} reaches the ${u.name} — but they are past taking orders. ${officer.title} ${shortName(officer.name)} is trying to stem the rout.`, true);
     return;
   }
+  if (u.status === 'looting') {
+    report(bs, 'messenger', bs.tick, u, `The ${ERAS[campaign.era].messengerWord} finds the ${u.name} scattered through the enemy tents. ${officer.title} ${shortName(officer.name)} reads your order, looks at his men, and shrugs helplessly.`, true);
+    return;
+  }
+  if (u.officerDown) {
+    // command has devolved on some steady nobody: literal, slow, careful
+    const delay = 8 + Math.round(dist(playerPosition(bs), u) / 80);
+    u.pendingOrder = {
+      order: {
+        type: m.order.type === 'charge' ? 'advance' : m.order.type,
+        target: m.order.target, targetUnitId: m.order.targetUnitId,
+        sinceTick: bs.tick, source: 'officer', note: 'executed by a deputy after the officer fell',
+      },
+      startTick: bs.tick + delay,
+    };
+    report(bs, 'officer', bs.tick, u, `The order reaches the ${u.name}, where ${officer.title} ${shortName(officer.name)}'s deputy now commands. He will comply — slowly, literally, and without an ounce of imagination.`, true);
+    return;
+  }
 
   // Threat assessment: what does the ground ahead look like to this officer?
   const enemies = bs.units.filter((e) => e.side === 'enemy' && !e.routed);
@@ -416,9 +715,13 @@ function deliverOrder(bs: BattleState, campaign: CampaignState, m: Messenger, rn
   const rivalInvolved = !!(supportTarget && supportTarget.officerId && supportTarget.officerId === officer.rivalId);
 
   const armyMorale = avgMorale(bs, 'friend');
+  const g = activeGrudge(bs, officer, u, 380);
   const ctx: InterpretContext = {
     tick: bs.tick, armyMorale, nearbyThreat, localOpportunity, rivalInvolved,
     distanceToTarget: m.order.target ? dist(u, m.order.target) : 0,
+    grudge: g?.grudge,
+    disciplineTone: campaign.disciplineTone,
+    honorSlighted: officer.honorSlighted === true,
   };
   // Orders age badly: clarity decays a little with distance from the general.
   m.order.clarity = Math.max(15, m.order.clarity - dist(playerPosition(bs), u) / 60);
@@ -449,7 +752,7 @@ function startPendingOrders(bs: BattleState) {
 
 // ---------------------------------------------------------------- enemy AI
 
-function enemyCommander(bs: BattleState, rng: Rng) {
+function enemyCommander(bs: BattleState, campaign: CampaignState, rng: Rng) {
   const plan = bs.enemyPlan;
   const enemies = bs.units.filter((u) => u.side === 'enemy' && !u.routed);
   const friends = bs.units.filter((u) => u.side === 'friend' && !u.routed);
@@ -514,6 +817,8 @@ function enemyCommander(bs: BattleState, rng: Rng) {
       const weakest = fighting.sort((a, b) => a.morale - b.morale)[0];
       if (weakest && (weakest.morale < 45 || rng.chance(plan.aggression / 200))) {
         give('e-reserve', { type: 'support', targetUnitId: weakest.id, sinceTick: bs.tick, source: 'enemy-ai' });
+        // you hear their signals before you see the consequence
+        report(bs, 'scout', bs.tick, { x: 600, y: 150 }, 'Horns from the enemy rear — short, urgent, repeated. Something back there has been ordered forward.', true, true);
       }
     }
     // idle enemy formations do not stand around all day — the enemy
@@ -538,6 +843,7 @@ function enemyCommander(bs: BattleState, rng: Rng) {
           give(u.id, { type: 'withdraw', target: { x: u.x, y: 30 }, sinceTick: bs.tick, source: 'enemy-ai' });
         }
       }
+      report(bs, 'scout', bs.tick, { x: 600, y: 150 }, 'Long, wavering notes from the enemy line — the same call, over and over. A recall. Or a retreat.', true, true);
     }
   }
 }
@@ -547,10 +853,10 @@ function enemyCommander(bs: BattleState, rng: Rng) {
 function officerMoments(bs: BattleState, campaign: CampaignState, rng: Rng) {
   for (let i = 0; i < bs.units.length; i++) {
     const u = bs.units[i];
-    if (u.side !== 'friend' || u.routed || u.playerLed || !u.officerId) continue;
+    if (u.side !== 'friend' || u.routed || u.playerLed || !u.officerId || u.officerDown || u.status === 'looting') continue;
     if ((bs.tick + i * 3) % 9 !== 0) continue; // staggered checks
     const officer = campaign.officers.find((o) => o.id === u.officerId);
-    if (!officer) continue;
+    if (!officer || officer.dead) continue;
 
     const enemies = bs.units.filter((e) => e.side === 'enemy' && !e.routed);
     const routingEnemyNearby = bs.units.some(
@@ -572,6 +878,8 @@ function officerMoments(bs: BattleState, campaign: CampaignState, rng: Rng) {
     const distFromPlayer = dist(u, playerPosition(bs));
     if (!rng.chance(Math.min(0.9, 0.45 + distFromPlayer / 900))) continue;
 
+    const g = activeGrudge(bs, officer, u, 300);
+    const grudgeChargeable = g && (g.grudge.kind === 'humiliation' || g.grudge.kind === 'blood');
     const result = officerAutonomy(officer, u, {
       tick: bs.tick,
       routingEnemyNearby,
@@ -579,6 +887,9 @@ function officerMoments(bs: BattleState, campaign: CampaignState, rng: Rng) {
       friendInTroubleId: friendInTrouble?.id,
       friendInTroubleName: friendInTrouble?.name,
       heavilyOutnumberedHere,
+      grudgeEnemyUnitId: grudgeChargeable ? g.enemyUnit.id : undefined,
+      grudgeEnemyName: grudgeChargeable ? g.grudge.enemyName : undefined,
+      disciplineTone: campaign.disciplineTone,
     }, rng.fork(i));
     if (result) {
       u.order = result.order;
@@ -599,11 +910,12 @@ function moveUnits(bs: BattleState, rng: Rng) {
     if (u.routed) continue;
     if (u.status === 'routing') { routMove(bs, u); continue; }
     if (u.status === 'fighting') continue; // locked in melee
+    if (u.status === 'looting') { u.fatigue = clamp(u.fatigue - 0.1); continue; } // busy
 
     const dest = destinationFor(bs, u);
     if (!dest) {
       if (u.status !== 'idle' && u.status !== 'holding') u.status = 'holding';
-      recoverInPlace(u);
+      recoverInPlace(u, bs.weather === 'heat');
       continue;
     }
     const d = dist(u, dest);
@@ -616,7 +928,7 @@ function moveUnits(bs: BattleState, rng: Rng) {
         }
       }
       u.status = 'holding';
-      recoverInPlace(u);
+      recoverInPlace(u, bs.weather === 'heat');
       continue;
     }
 
@@ -636,9 +948,10 @@ function moveUnits(bs: BattleState, rng: Rng) {
       u.order.type === 'pursue' ? 'pursuing' :
       u.order.type === 'charge' ? 'advancing' :
       u.order.type === 'hold' ? 'marching' : 'advancing';
-    // moving costs
-    const cost = (u.order.type === 'charge' ? 0.5 : 0.22) * (u.cls === 'cavalry' ? 0.7 : 1);
-    u.fatigue = clamp(u.fatigue + cost);
+    // moving costs; heat makes armor a furnace
+    const heatMult = bs.weather === 'heat' ? 1.4 : 1;
+    const cost = (u.order.type === 'charge' ? 0.5 : 0.22) * (u.cls === 'cavalry' ? 0.7 : 1) * heatMult;
+    u.fatigue = clamp(u.fatigue + cost + (u.hungry ? 0.05 : 0));
     u.cohesion = clamp(u.cohesion - (u.order.type === 'charge' ? 0.25 : 0.06));
   }
 }
@@ -654,6 +967,7 @@ function destinationFor(bs: BattleState, u: Unit): { x: number; y: number } | un
   switch (o.type) {
     case 'hold':
     case 'rally':
+    case 'attack-on-signal': // stand ready; the horn will come (or it won't)
       return undefined;
     case 'advance':
     case 'advance-cautious':
@@ -711,8 +1025,9 @@ function destinationFor(bs: BattleState, u: Unit): { x: number; y: number } | un
   }
 }
 
-function recoverInPlace(u: Unit) {
-  u.fatigue = clamp(u.fatigue - 0.25);
+function recoverInPlace(u: Unit, heat = false) {
+  // standing in the sun in armor is not rest
+  u.fatigue = clamp(u.fatigue - (heat ? 0.05 : 0.25));
   u.cohesion = clamp(u.cohesion + 0.2);
   if (u.status === 'holding' && u.morale < 70) u.morale = clamp(u.morale + 0.05);
 }
@@ -755,7 +1070,7 @@ function missileFire(bs: BattleState, rng: Rng) {
   }
 }
 
-function meleeCombat(bs: BattleState, rng: Rng) {
+function meleeCombat(bs: BattleState, campaign: CampaignState, rng: Rng) {
   // establish engagements
   for (const u of bs.units) {
     if (u.routed || u.status === 'routing') continue;
@@ -767,12 +1082,22 @@ function meleeCombat(bs: BattleState, rng: Rng) {
       }
       continue;
     }
+    if (u.status === 'looting') continue; // deaf to everything but gold
     const foe = bs.units.find(
       (e) => e.side !== u.side && !e.routed && e.status !== 'routing' && dist(u, e) <= ENGAGE_RANGE,
     );
     if (foe) {
       u.engagedWith = foe.id;
       if (!foe.engagedWith) foe.engagedWith = u.id;
+      // being attacked mid-plunder is how looters die: dragged into line
+      // scattered, laden, and unready
+      if (foe.status === 'looting') {
+        foe.status = 'fighting';
+        foe.cohesion = clamp(foe.cohesion - 20);
+        foe.morale = clamp(foe.morale - 10);
+        foe.lootingUntil = undefined;
+        report(bs, 'combat', bs.tick, foe, `The ${foe.name} are caught in the enemy camp with their arms full. They form up among the tents — badly.`, true);
+      }
       const wasCharging = u.order.type === 'charge' || u.order.type === 'pursue';
       if (u.status !== 'fighting') {
         u.status = 'fighting';
@@ -826,6 +1151,26 @@ function meleeCombat(bs: BattleState, rng: Rng) {
       foe.status = 'routing';
       report(bs, 'combat', bs.tick, foe, `${foe.name} have been destroyed as a fighting force.`, true);
       event(bs, 'destroyed', `${foe.name} were wiped out.`, undefined, foe.id);
+      recordCombatGrudge(bs, campaign, u, foe);
+    }
+  }
+}
+
+// When one named man's formation breaks another's, both remember.
+function recordCombatGrudge(bs: BattleState, campaign: CampaignState, victor: Unit, broken: Unit) {
+  if (victor.side === 'friend' && broken.side === 'enemy') {
+    const officer = campaign.officers.find((o) => o.id === victor.officerId);
+    const foe = campaign.enemyOfficers.find((o) => o.id === broken.officerId);
+    if (officer && !officer.dead && foe) {
+      addGrudge(officer, { enemyOfficerId: foe.id, enemyName: foe.name, kind: 'triumph', note: `Broke ${foe.name}'s formation in open battle.` });
+      officer.deeds.push(`Broke ${foe.name}'s command in open battle.`);
+    }
+  } else if (victor.side === 'enemy' && broken.side === 'friend') {
+    const officer = campaign.officers.find((o) => o.id === broken.officerId);
+    const foe = campaign.enemyOfficers.find((o) => o.id === victor.officerId);
+    if (officer && !officer.dead && foe) {
+      addGrudge(officer, { enemyOfficerId: foe.id, enemyName: foe.name, kind: 'humiliation', note: `His formation was broken by ${foe.name}.` });
+      event(bs, 'grudge-formed', `${officer.title} ${shortName(officer.name)} will not forget the name ${foe.name}.`, officer.id);
     }
   }
 }
@@ -884,8 +1229,11 @@ function moraleAndRouts(bs: BattleState, campaign: CampaignState, rng: Rng) {
         }
         event(bs, 'waver', `${u.name} began to waver.`, undefined, u.id);
       }
-      const breakChance = (32 - u.morale) / 100 * (1 - u.discipline / 250) * (u.playerLed ? 0.5 : 1);
+      // A harshly drilled army obeys right up until it shatters all at once.
+      const toneMult = u.side === 'friend' ? (campaign.disciplineTone < 40 ? 1.25 : campaign.disciplineTone > 60 ? 0.9 : 1) : 1;
+      const breakChance = (32 - u.morale) / 100 * (1 - u.discipline / 250) * (u.playerLed ? 0.5 : 1) * toneMult;
       if (u.morale < 20 && rng.chance(breakChance)) {
+        const breaker = u.engagedWith ? unit(bs, u.engagedWith) : undefined;
         u.status = 'routing';
         u.engagedWith = undefined;
         u.pendingOrder = undefined;
@@ -897,6 +1245,7 @@ function moraleAndRouts(bs: BattleState, campaign: CampaignState, rng: Rng) {
         event(bs, 'rout', `${u.name} broke and ran.`, undefined, u.id);
         const officer = campaign.officers.find((o) => o.id === u.officerId);
         if (officer) officer.perf.blunders++;
+        if (breaker) recordCombatGrudge(bs, campaign, breaker, u);
       }
     } else if (u.status === 'wavering' && u.morale >= 34) {
       u.status = u.engagedWith ? 'fighting' : 'holding';
@@ -937,15 +1286,26 @@ function updateVisibility(bs: BattleState) {
 
 // ---------------------------------------------------------------- ambient reports
 
-function ambientReports(bs: BattleState, rng: Rng) {
+function ambientReports(bs: BattleState, campaign: CampaignState, rng: Rng) {
   if (bs.tick % 30 !== 0) return;
   const friends = bs.units.filter((u) => u.side === 'friend' && !u.routed);
   const fighting = friends.filter((u) => u.status === 'fighting');
   if (fighting.length && rng.chance(0.5)) {
     const u = rng.pick(fighting);
     const foe = u.engagedWith ? unit(bs, u.engagedWith) : undefined;
-    const winning = foe && (u.morale - foe.morale) > 12;
-    const losing = foe && (foe.morale - u.morale) > 12;
+    const officer = campaign.officers.find((o) => o.id === u.officerId);
+    // Officers color their reports. The proud understate their trouble,
+    // the ambitious inflate their success, the frightened triple the
+    // enemy. What reaches you is the man, not the melee.
+    let margin = foe ? u.morale - foe.morale : 0;
+    if (officer && !u.playerLed) {
+      const t = officer.traits;
+      if (margin < 0) margin += (t.pride - 50) * 0.35;      // pride hides distress
+      if (margin > 0) margin += (t.ambition - 50) * 0.3;    // ambition gilds success
+      if (t.courage < 40) margin -= 10;                     // fear counts double
+    }
+    const winning = margin > 12;
+    const losing = margin < -12;
     const line = winning
       ? `Word from the ${u.name}: they are getting the better of it. The enemy in front of them is giving ground.`
       : losing
@@ -954,9 +1314,25 @@ function ambientReports(bs: BattleState, rng: Rng) {
     report(bs, 'combat', bs.tick, u, line);
   }
   const idle = friends.filter((u) => u.status === 'holding' && u.order.type === 'hold' && bs.tick - u.order.sinceTick > 60);
-  if (idle.length && rng.chance(0.35)) {
+  if (idle.length && rng.chance(0.12)) {
     const u = rng.pick(idle);
     report(bs, 'officer', bs.tick, u, `The ${u.name} stand idle and await orders.`);
+  }
+  // Dust: movement you cannot see still stirs the air. Sometimes it is
+  // exactly what it looks like. Sometimes it is a herd of goats.
+  const unseen = bs.units.filter((u) => {
+    if (u.side !== 'enemy' || u.routed) return false;
+    const k = bs.known[u.id];
+    return (!k || !k.visibleNow) && (u.status === 'marching' || u.status === 'advancing' || u.status === 'pursuing');
+  });
+  if (unseen.length && bs.weather !== 'rain' && rng.chance(0.4)) {
+    const u = rng.pick(unseen);
+    const dir = u.x < 450 ? 'off your left' : u.x > 750 ? 'off your right' : 'beyond the enemy center';
+    report(bs, 'scout', bs.tick, { x: u.x, y: u.y + 100 }, `Dust rising ${dir}. Something is moving there${u.cls === 'cavalry' ? ', and moving fast' : ''} — the scouts cannot say what.`);
+  } else if (bs.weather !== 'rain' && campaign.intel < 40 && rng.chance(0.12)) {
+    // poor intelligence breeds phantoms
+    const dir = rng.pick(['off your left', 'off your right', 'far beyond the enemy line']);
+    report(bs, 'scout', bs.tick, { x: rng.range(200, 1000), y: 300 }, `A picket reports dust ${dir} — possibly a fresh column. Nothing confirms it.`);
   }
 }
 
@@ -1015,8 +1391,15 @@ function checkEnd(bs: BattleState, campaign: CampaignState, rng: Rng) {
 
   if (sideBroken(bs, 'enemy') && !sideBroken(bs, 'friend')) {
     bs.outcome = fLoss < 0.14 ? 'decisive-victory' : fLoss < 0.3 ? 'costly-victory' : 'pyrrhic-victory';
+    // a victory spent in the enemy's tents is a smaller victory: the
+    // pursuit that would have destroyed them never happened
+    if (bs.lootingHappened && bs.outcome === 'decisive-victory') {
+      bs.outcome = 'costly-victory';
+      report(bs, 'command', bs.tick, playerPosition(bs), 'The enemy army is broken — but half your men are in their camp instead of on their heels. What escapes today you will fight again.', true, true);
+    } else {
+      report(bs, 'command', bs.tick, playerPosition(bs), 'The enemy army is broken. The field is yours.', true, true);
+    }
     bs.outcomeTick = bs.tick;
-    report(bs, 'command', bs.tick, playerPosition(bs), 'The enemy army is broken. The field is yours.', true, true);
     return;
   }
   // Enemy withdrew in order rather than broke.

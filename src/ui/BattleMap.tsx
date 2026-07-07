@@ -74,6 +74,10 @@ export function BattleMap({ battle, campaign, selectedId, mode, targeting, onSel
         const k = battle.known[u.id];
         if (!k || u.routed && !k.visibleNow) return null;
         const ghost = !k.visibleNow;
+        const captain = u.officerId ? campaign.enemyOfficers.find((o) => o.id === u.officerId) : undefined;
+        const captainName = captain && !captain.dead && k.identified && !ghost
+          ? shortName(captain.name.replace(/ the .*$/, '').replace(/ of .*$/, '').replace(/ de .*$/, ''))
+          : undefined;
         return (
           <UnitGlyph
             key={u.id}
@@ -84,6 +88,7 @@ export function BattleMap({ battle, campaign, selectedId, mode, targeting, onSel
             identified={k.identified}
             selected={false}
             label={ghost ? (k.identified ? 'last seen' : 'unknown force') : enemyShortLabel(u)}
+            sublabel={captainName ? `under ${captainName}` : undefined}
             onClick={() => onSelect(u.id)}
           />
         );

@@ -4,11 +4,41 @@
 
 import type { Rng } from './rng.ts';
 import type {
-  ActiveOrder, Officer, OrderType, PlayerOrder, Traits, Unit, UnitClass,
+  ActiveOrder, EnemyOfficer, Grudge, Officer, OrderType, PlayerOrder, Traits,
+  Unit, UnitClass,
 } from './types.ts';
 import type { Era } from './era.ts';
 
+const TRAIT_KEYS: (keyof Traits)[] = [
+  'competence', 'initiative', 'aggression', 'caution', 'loyalty',
+  'ambition', 'pride', 'discipline', 'courage', 'trust',
+];
+
 // ---------------------------------------------------------------- generation
+
+// Reputation is what the world says of a man. For most officers it is the
+// truth plus gossip-noise. For a few it is dangerously wrong — the hero of
+// a battle he did not actually win, the "plodder" who is the best soldier
+// you have. The player's epithets and blurbs are generated from THIS.
+function distortTraits(truth: Traits, rng: Rng, badlyMisjudged: boolean): Traits {
+  const rep = { ...truth };
+  for (const k of TRAIT_KEYS) {
+    rep[k] = clampTrait(rep[k] + rng.range(-9, 9));
+  }
+  if (badlyMisjudged) {
+    // the world is wrong about the two or three things that define him
+    const keys = rng.shuffle(TRAIT_KEYS.filter((k) => k !== 'trust')).slice(0, 3);
+    for (const k of keys) {
+      const v = truth[k];
+      rep[k] = clampTrait(v >= 50 ? v - rng.range(28, 48) : v + rng.range(28, 48));
+    }
+  }
+  return rep;
+}
+
+function clampTrait(n: number): number {
+  return Math.max(5, Math.min(95, Math.round(n)));
+}
 
 function rollTraits(rng: Rng): Traits {
   const t = (base: number, spread: number) =>
@@ -71,27 +101,92 @@ export function generateOfficers(rng: Rng, era: Era): Officer[] {
   const names = rng.shuffle(era.officerNames);
   const backgrounds = rng.shuffle(BACKGROUNDS);
   const specialties: UnitClass[] = ['infantry', 'infantry', 'infantry', 'cavalry', 'ranged', 'infantry', 'cavalry'];
+  // Two of the seven are badly misjudged by the world: the famous name who
+  // is nothing much, or the plodder who is the best soldier you have.
+  const misjudged = new Set(rng.shuffle([0, 1, 2, 3, 4, 5, 6]).slice(0, 2));
   const officers: Officer[] = [];
   for (let i = 0; i < 7; i++) {
     const traits = rollTraits(rng.fork(i + 11));
+    const reputation = distortTraits(traits, rng.fork(i + 61), misjudged.has(i));
     officers.push({
       id: `off-${i}`,
       name: names[i],
       title: era.officerTitles[i],
-      epithet: describe(traits, rng.fork(i + 101)),
+      epithet: describe(reputation, rng.fork(i + 101)),
       background: backgrounds[i % backgrounds.length],
       traits,
+      reputation,
+      observations: [],
+      grudges: [],
       specialty: specialties[i],
       confidence: Math.round(50 + rng.range(-10, 10)),
       deeds: [],
       perf: { ordersReceived: 0, faithful: 0, deviations: 0, heroics: 0, blunders: 0 },
     });
   }
+  // One officer is the ruler's appointee: his reputation is gilded at court
+  // whatever the truth of him, and how you employ him is a political act.
+  const appointee = officers[rng.int(0, 6)];
+  appointee.reputation = distortTraits(appointee.traits, rng.fork(303), true);
+  appointee.epithet = describe(appointee.reputation, rng.fork(304));
+  appointee.background = `Sent to you by ${era.rulerTitle} personally, with a letter praising him in terms no living soldier has earned. How you employ him will be noticed at court.`;
   // one rivalry pair — rivals resent supporting each other
   const [a, b] = rng.shuffle(officers).slice(0, 2);
   a.rivalId = b.id;
   b.rivalId = a.id;
   return officers;
+}
+
+// What you have personally seen a man do. The only trustworthy record.
+export function observe(o: Officer, text: string) {
+  if (o.observations.includes(text)) return;
+  o.observations.push(text);
+  if (o.observations.length > 7) o.observations.shift();
+}
+
+export function addGrudge(o: Officer, g: Grudge) {
+  const existing = o.grudges.find((x) => x.enemyOfficerId === g.enemyOfficerId);
+  if (existing) {
+    // a new humiliation deepens; a triumph erases a humiliation
+    if (g.kind === 'humiliation' || g.kind === 'blood') Object.assign(existing, g);
+    else if (existing.kind !== 'blood') Object.assign(existing, g);
+    return;
+  }
+  o.grudges.push(g);
+}
+
+// ------------------------------------------------------------ enemy officers
+
+const ENEMY_EPITHETS: [keyof EnemyOfficer['traits'], boolean, string][] = [
+  ['aggression', true, 'a killer, the prisoners say — first over every wall'],
+  ['aggression', false, 'said to be a careful man who counts twice and strikes once'],
+  ['competence', true, 'spoken of with respect even by men he has beaten'],
+  ['competence', false, 'holds his command through marriage, not merit — they say'],
+  ['cunning', true, 'fond of feints and false camps; nothing he shows you is free'],
+  ['cunning', false, 'a straight-ahead soldier; what you see is what will come'],
+];
+
+export function generateEnemyOfficers(rng: Rng, era: Era): EnemyOfficer[] {
+  return era.enemyOfficerNames.map((name, i) => {
+    const traits = {
+      competence: Math.round(rng.fork(i + 500).range(30, 85)),
+      aggression: Math.round(rng.fork(i + 510).range(25, 90)),
+      cunning: Math.round(rng.fork(i + 520).range(20, 85)),
+    };
+    // epithet describes his most extreme quality — scouts' gossip, so it is
+    // usually right about enemies (their reputations are earned in raids)
+    const scored = ENEMY_EPITHETS.map(([k, high, text]) => ({
+      score: high ? traits[k] - 50 : 50 - traits[k], text,
+    })).sort((a, b) => b.score - a.score);
+    return {
+      id: `eoff-${i}`,
+      name,
+      title: era.enemyOfficerTitle,
+      epithet: scored[0].text,
+      traits,
+      renown: Math.round(rng.fork(i + 530).range(30, 90)),
+    };
+  });
 }
 
 // ---------------------------------------------------------------- clarity
@@ -103,6 +198,7 @@ export function orderClarity(type: OrderType, urgency: 'measured' | 'urgent', we
     hold: 90, advance: 75, 'advance-cautious': 70, charge: 80, withdraw: 75,
     'take-position': 60, 'screen-flank': 55, support: 60, harass: 55,
     pursue: 70, rally: 80, 'protect-camp': 85, 'refuse-flank': 50,
+    'attack-on-signal': 65, // conditional orders age poorly in a waiting mind
   };
   let c = base[type];
   if (urgency === 'urgent') c -= 10; // haste breeds garbled orders
@@ -133,6 +229,10 @@ export interface InterpretContext {
   localOpportunity: boolean; // routing/exposed enemy nearby
   rivalInvolved: boolean;    // order asks him to support his rival
   distanceToTarget: number;
+  // the named enemy this officer has history with, if his banner is in sight
+  grudge?: Grudge;
+  disciplineTone: number;    // harsh(0)..indulgent(100) — how you ran the march
+  honorSlighted: boolean;    // given a post beneath his dignity at deployment
 }
 
 const AGGRESSIVE_SWAP: Partial<Record<OrderType, OrderType>> = {
@@ -141,6 +241,7 @@ const AGGRESSIVE_SWAP: Partial<Record<OrderType, OrderType>> = {
   hold: 'advance',
   support: 'charge',
   harass: 'charge',
+  'attack-on-signal': 'charge', // "the horn? THIS is the horn" — and he goes now
 };
 
 const CAUTIOUS_SWAP: Partial<Record<OrderType, OrderType>> = {
@@ -171,6 +272,11 @@ export function interpretOrder(
   });
 
   const who = `${officer.title} ${shortName(officer.name)}`;
+  const harsh = ctx.disciplineTone < 40;   // you flogged your way here
+  const indulgent = ctx.disciplineTone > 60; // you looked the other way
+
+  // Effective steadiness: wounds and slighted honor tell on a man.
+  const effCourage = t.courage - (officer.wounded ? 12 : 0);
 
   // --- Refusal: rare, requires a perfect storm -------------------------
   const dangerous = po.type === 'charge' || po.type === 'advance' || po.type === 'pursue';
@@ -180,10 +286,12 @@ export function interpretOrder(
     ctx.armyMorale < 40 &&
     t.loyalty < 35 &&
     t.trust < 40 &&
+    !harsh && // drilled-in obedience holds even here — until the army breaks instead
     rng.chance(0.5)
   ) {
     officer.perf.deviations++;
     officer.deeds.push('Refused a direct order in the face of the enemy.');
+    observe(officer, 'You have seen him refuse a direct order outright.');
     return {
       kind: 'refused',
       order: { type: 'hold', sinceTick: ctx.tick, source: 'officer', note: 'refused the order' },
@@ -194,9 +302,55 @@ export function interpretOrder(
     };
   }
 
+  // --- Grudge: the man across the field has a name ---------------------
+  if (ctx.grudge && (ctx.grudge.kind === 'humiliation' || ctx.grudge.kind === 'blood')) {
+    // Ordered away from his enemy: pride chokes on it.
+    if ((po.type === 'withdraw' || po.type === 'hold' || po.type === 'refuse-flank') &&
+        t.pride > 55 && rng.chance(0.5)) {
+      officer.perf.deviations++;
+      observe(officer, `You have seen his feud with ${ctx.grudge.enemyName} outweigh his orders.`);
+      return {
+        ...faithful('delayed', `${who} receives the order and does not move. He is staring across the field at ${ctx.grudge.enemyName}'s banner.`, rng.int(12, 26)),
+        returnNote: `${who} sends back: "Ask me anything but this. Not from HIM."`,
+        aarNote: `${who} was slow to ${orderVerb(po.type)} while ${ctx.grudge.enemyName}'s banner stood in sight.`,
+      };
+    }
+    // Ordered toward anything: he goes harder than asked.
+    if (dangerous && rng.chance(0.6)) {
+      officer.perf.deviations++;
+      observe(officer, `You have seen him fight ${ctx.grudge.enemyName} like a man settling a debt.`);
+      const newType: OrderType = po.type === 'pursue' ? 'pursue' : 'charge';
+      return {
+        kind: 'aggressive',
+        order: {
+          type: newType, target: po.target, targetUnitId: po.targetUnitId,
+          sinceTick: ctx.tick, source: 'officer', note: `pressed home against ${ctx.grudge.enemyName}`,
+        },
+        delayTicks: 0,
+        ackText: `${who} does not wait for the ${'rider'} to finish. His whole formation is already moving — at ${ctx.grudge.enemyName}.`,
+        aarNote: `${who} turned his orders into a private reckoning with ${ctx.grudge.enemyName}.`,
+      };
+    }
+  }
+
+  // --- Trust latency: a doubting officer wants it in writing -----------
+  if (dangerous && ctx.nearbyThreat > 0.45 && t.trust < 42 && !officer.playerEndorsed && rng.chance(0.45)) {
+    officer.perf.deviations++;
+    observe(officer, 'You have seen him hold an attack while he asked whether you truly meant it.');
+    return {
+      kind: 'clarify',
+      order: { ...unit.order, sinceTick: ctx.tick },
+      delayTicks: 0,
+      ackText: `${who} reads the order twice and sends the ${'rider'} straight back. He wants confirmation.`,
+      returnNote: `${who} asks: "Does the general know what stands in front of me? Confirm the order and I will go."`,
+      aarNote: `${who} demanded confirmation before obeying, and the moment aged while he waited.`,
+    };
+  }
+
   // --- Request clarification: muddled order + literal-minded officer ---
   if (po.clarity < 55 && t.competence < 45 && t.initiative < 50 && rng.chance(0.5)) {
     officer.perf.deviations++;
+    observe(officer, 'You have seen him freeze when orders were not spelled out.');
     return {
       kind: 'clarify',
       order: { ...unit.order, sinceTick: ctx.tick },
@@ -208,8 +362,11 @@ export function interpretOrder(
   }
 
   // --- Fear: shaky officer facing real danger delays or stops short ----
-  if (dangerous && ctx.nearbyThreat > 0.5 && t.courage < 40 && rng.chance(0.6)) {
+  if (dangerous && ctx.nearbyThreat > 0.5 && effCourage < 40 && rng.chance(0.6)) {
     officer.perf.deviations++;
+    observe(officer, officer.wounded
+      ? 'You have seen his wound sit heavier on him than he admits.'
+      : 'You have seen him hesitate in the face of the enemy.');
     if (rng.chance(0.5)) {
       const delay = rng.int(8, 20);
       return {
@@ -235,6 +392,7 @@ export function interpretOrder(
   // --- Pride: being told to support a rival stings ---------------------
   if (ctx.rivalInvolved && t.pride > 65 && rng.chance(0.55)) {
     officer.perf.deviations++;
+    observe(officer, 'You have seen his quarrels slow the army’s work.');
     const delay = rng.int(10, 25);
     return {
       ...faithful('delayed', `${who} receives the order in silence. His formation is... taking its time.`, delay),
@@ -245,12 +403,18 @@ export function interpretOrder(
 
   // --- Core interpretation roll ----------------------------------------
   // Competence + discipline + clarity + confidence decide how straight
-  // the order comes through.
+  // the order comes through. The campaign's tone and today's politics
+  // put a thumb on the scale.
   const score =
     t.competence * 0.35 +
     t.discipline * 0.2 +
     po.clarity * 0.3 +
     officer.confidence * 0.15 +
+    (harsh ? 10 : 0) +                       // drilled obedience: fewer liberties
+    (officer.playerEndorsed ? 8 : 0) +       // a trusted man reads you better
+    (ctx.honorSlighted ? -10 : 0) +          // a slighted man reads you worse
+    (officer.wounded ? -8 : 0) +
+    (ctx.grudge?.kind === 'triumph' ? 6 : 0) + // he has beaten this man before
     rng.range(-18, 18);
 
   // Personality pull: strong temperament bends borderline readings.
@@ -258,9 +422,11 @@ export function interpretOrder(
   const cautiousPull = (t.caution - 50) * 0.45 + (50 - t.courage) * 0.2;
 
   // Opportunists: high initiative + real local opening = they take it.
-  if (ctx.localOpportunity && t.initiative > 65 && rng.chance(0.4)) {
+  // A harsh campaign beats this out of them; an indulgent one feeds it.
+  if (ctx.localOpportunity && t.initiative > 65 && !harsh && rng.chance(indulgent ? 0.5 : 0.4)) {
     officer.perf.deviations++;
     officer.deeds.push('Acted on his own judgment when he saw an opening.');
+    observe(officer, 'You have seen him act boldly on his own judgment.');
     const newType: OrderType = unit.cls === 'cavalry' ? 'charge' : 'advance';
     return {
       kind: 'opportunist',
@@ -300,6 +466,7 @@ export function interpretOrder(
     // temperament decides which way the misreading bends
     if (aggressivePull > cautiousPull && AGGRESSIVE_SWAP[po.type]) {
       officer.perf.deviations++;
+      observe(officer, 'You have seen him turn measured orders into attacks.');
       const newType = AGGRESSIVE_SWAP[po.type]!;
       return {
         kind: 'aggressive',
@@ -314,6 +481,7 @@ export function interpretOrder(
     }
     if (CAUTIOUS_SWAP[po.type]) {
       officer.perf.deviations++;
+      observe(officer, 'You have seen him soften sharp orders into careful ones.');
       const newType = CAUTIOUS_SWAP[po.type]!;
       return {
         kind: 'cautious',
@@ -332,6 +500,7 @@ export function interpretOrder(
 
   // score < 40: genuinely garbled
   officer.perf.deviations++;
+  observe(officer, 'You have seen him mistake his objective entirely.');
   if (po.target && rng.chance(0.6)) {
     const wrong = {
       x: po.target.x + rng.range(-160, 160),
@@ -373,11 +542,39 @@ export function officerAutonomy(
     friendInTroubleId?: string;
     friendInTroubleName?: string;
     heavilyOutnumberedHere: boolean;
+    // his personal enemy's unit, if identified and within reach
+    grudgeEnemyUnitId?: string;
+    grudgeEnemyName?: string;
+    disciplineTone: number;
   },
   rng: Rng,
 ): AutonomyResult | undefined {
   const t = officer.traits;
   const who = `${officer.title} ${shortName(officer.name)}`;
+  const harsh = ctx.disciplineTone < 40;
+  const indulgent = ctx.disciplineTone > 60;
+
+  // A private war: his enemy's banner is in reach and no one is watching.
+  if (
+    ctx.grudgeEnemyUnitId &&
+    (unit.status === 'holding' || unit.status === 'idle') &&
+    unit.order.type !== 'withdraw' &&
+    (t.pride + t.aggression) / 2 > 62 &&
+    !harsh &&
+    rng.chance(0.18)
+  ) {
+    officer.perf.deviations++;
+    observe(officer, `You have seen him break formation to get at ${ctx.grudgeEnemyName}.`);
+    return {
+      order: {
+        type: 'charge', targetUnitId: ctx.grudgeEnemyUnitId,
+        sinceTick: ctx.tick, source: 'officer', note: `went at ${ctx.grudgeEnemyName} without orders`,
+      },
+      reportText: `${who} is moving without orders — straight at ${ctx.grudgeEnemyName}'s banner. This is not your battle plan. It is his.`,
+      aarNote: `${who} abandoned his post to settle his account with ${ctx.grudgeEnemyName}.`,
+      blunder: true,
+    };
+  }
 
   // Glory-hunters pursue broken enemies off the field.
   if (
@@ -386,10 +583,11 @@ export function officerAutonomy(
     unit.status !== 'withdrawing' &&
     (unit.order.type === 'hold' || unit.order.type === 'advance' || unit.order.type === 'charge') &&
     (t.aggression + t.ambition) / 2 > 60 &&
-    t.discipline < 60 &&
-    rng.chance(0.3)
+    t.discipline < (harsh ? 45 : 60) &&
+    rng.chance(indulgent ? 0.4 : 0.3)
   ) {
     officer.perf.deviations++;
+    observe(officer, 'You have seen him lose his head in pursuit of a beaten enemy.');
     return {
       order: { type: 'pursue', sinceTick: ctx.tick, source: 'officer', note: 'pursued without orders' },
       reportText: `${who} has taken up the pursuit without waiting for a signal. His formation is leaving its place in the line.`,
@@ -406,9 +604,11 @@ export function officerAutonomy(
     unit.status !== 'fighting' &&
     t.initiative > 60 &&
     t.loyalty > 55 &&
-    rng.chance(0.25)
+    !harsh && // a flogged army waits for orders while its neighbors die
+    rng.chance(indulgent ? 0.32 : 0.25)
   ) {
     officer.perf.deviations++;
+    observe(officer, 'You have seen him march to a neighbor’s rescue unbidden.');
     return {
       order: {
         type: 'support', targetUnitId: ctx.friendInTroubleId,
@@ -431,6 +631,7 @@ export function officerAutonomy(
     rng.chance(0.3)
   ) {
     officer.perf.deviations++;
+    observe(officer, 'You have seen him give ground without orders when the odds looked long.');
     return {
       order: { type: 'withdraw', sinceTick: ctx.tick, source: 'officer', note: 'fell back from bad odds without orders' },
       reportText: `${who} is giving ground — he judges the odds in front of him impossible and has not waited to ask.`,
@@ -459,6 +660,7 @@ export function orderVerb(type: OrderType): string {
     'screen-flank': 'screen the flank', support: 'support', harass: 'harass the enemy',
     pursue: 'pursue', rally: 'rally', 'protect-camp': 'protect the camp',
     'refuse-flank': 'refuse the flank',
+    'attack-on-signal': 'stand ready and attack on the signal',
   };
   return verbs[type];
 }

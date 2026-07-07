@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { ERAS } from '../sim/era.ts';
+import { shortName } from '../sim/officer.ts';
 import type { CampaignState } from '../sim/types.ts';
-import type { MarchChoices } from '../sim/campaign.ts';
+import type { EngagementApproach, MarchChoices } from '../sim/campaign.ts';
 import { actions } from '../store.ts';
 import { OfficerCard, ReportLog, StatBar } from './shared.tsx';
 
@@ -39,6 +40,7 @@ export function CampaignScreen({ campaign }: { campaign: CampaignState }) {
 
             {!arrived && (
               <>
+                {campaign.pendingEngagement && <div className="hint" style={{ marginBottom: 10 }}>A fight has found the column. Deal with it before the army can move.</div>}
                 <Choice
                   label="Pace"
                   value={pace}
@@ -69,12 +71,12 @@ export function CampaignScreen({ campaign }: { campaign: CampaignState }) {
                 />
                 <button
                   className="primary"
-                  disabled={!!campaign.pendingEvent}
+                  disabled={!!campaign.pendingEvent || !!campaign.pendingEngagement}
                   onClick={() => actions.marchDay({ pace, supply, scouts })}
                 >
                   Give the order — march
                 </button>
-                {campaign.pendingEvent && <span className="small" style={{ marginLeft: 10 }}>A matter requires your decision first.</span>}
+                {(campaign.pendingEvent || campaign.pendingEngagement) && <span className="small" style={{ marginLeft: 10 }}>A matter requires your decision first.</span>}
               </>
             )}
             {arrived && (
@@ -115,7 +117,7 @@ export function CampaignScreen({ campaign }: { campaign: CampaignState }) {
         </div>
       </div>
 
-      {campaign.pendingEvent && (
+      {campaign.pendingEvent && !campaign.pendingEngagement && (
         <div className="modal-back">
           <div className="modal">
             <h3>{campaign.pendingEvent.title}</h3>
@@ -129,6 +131,64 @@ export function CampaignScreen({ campaign }: { campaign: CampaignState }) {
           </div>
         </div>
       )}
+      {campaign.pendingEngagement && <EngagementModal campaign={campaign} />}
+    </div>
+  );
+}
+
+// A vanguard action: put a name on the fight, and a manner on the name.
+// The man's TRUE quality decides it — his reputation only decides what
+// you expected.
+function EngagementModal({ campaign }: { campaign: CampaignState }) {
+  const eng = campaign.pendingEngagement!;
+  const [officerId, setOfficerId] = useState<string | undefined>();
+  const [approach, setApproach] = useState<EngagementApproach>('storm');
+  const available = campaign.officers.filter((o) => !o.dead && !o.wounded);
+  const chosen = campaign.officers.find((o) => o.id === officerId);
+  return (
+    <div className="modal-back">
+      <div className="modal" style={{ maxWidth: 640 }}>
+        <h3>{eng.title}</h3>
+        <div className="event-text">{eng.text}</div>
+        <div className="hint" style={{ marginBottom: 10 }}>{eng.stakes}</div>
+        <div className="choice-group">
+          <div className="group-label">Who leads the detachment?</div>
+          <div className="opts">
+            {available.map((o) => (
+              <button
+                key={o.id}
+                className={officerId === o.id ? 'active' : ''}
+                onClick={() => setOfficerId(o.id)}
+              >
+                {o.title} {shortName(o.name)}
+              </button>
+            ))}
+          </div>
+          {chosen && (
+            <div className="small" style={{ marginTop: 6, fontStyle: 'italic' }}>
+              “{chosen.epithet}” {chosen.observations.length > 0 && <span>— though you have seen things the epithet leaves out.</span>}
+            </div>
+          )}
+        </div>
+        <div className="choice-group">
+          <div className="group-label">In what manner?</div>
+          <div className="opts">
+            <button className={approach === 'storm' ? 'active' : ''} onClick={() => setApproach('storm')}>
+              Storm it — speed and steel
+            </button>
+            <button className={approach === 'maneuver' ? 'active' : ''} onClick={() => setApproach('maneuver')}>
+              Maneuver — patience and ground
+            </button>
+          </div>
+        </div>
+        <button
+          className="primary"
+          disabled={!officerId}
+          onClick={() => officerId && actions.resolveEngagement(officerId, approach)}
+        >
+          Send him
+        </button>
+      </div>
     </div>
   );
 }

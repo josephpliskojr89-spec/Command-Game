@@ -5,8 +5,16 @@ import { useSyncExternalStore } from 'react';
 import type {
   EraId, GameState, OrderType, SpeedSetting, Urgency,
 } from './sim/types.ts';
-import { newCampaign, resolveMarchDay, resolveEventChoice, resolveCampChoice, holdCouncil, finalScout, type MarchChoices } from './sim/campaign.ts';
-import { setupBattle, battleTick, issuePlayerOrder, orderGeneralWithdrawal, DEPLOY_Y, MAP_H, MAP_W } from './sim/battle.ts';
+import {
+  newCampaign, resolveMarchDay, resolveEventChoice, resolveCampChoice,
+  buildCouncilProposals, endorseProposal, finalScout, resolveEngagement,
+  maybeChallenge, resolveChallenge, commendOfficer, censureOfficer,
+  nextOperation, type EngagementApproach, type MarchChoices,
+} from './sim/campaign.ts';
+import {
+  setupBattle, battleTick, issuePlayerOrder, orderGeneralWithdrawal,
+  applyDeploymentPolitics, soundSignal, DEPLOY_Y, MAP_H, MAP_W,
+} from './sim/battle.ts';
 import { buildAfterAction } from './sim/aar.ts';
 import { FORMATIONS } from './sim/era.ts';
 
@@ -54,8 +62,22 @@ export const actions = {
     notify();
   },
 
+  resolveEngagement(officerId: string, approach: EngagementApproach) {
+    if (!state.campaign) return;
+    resolveEngagement(state.campaign, officerId, approach);
+    notify();
+  },
+
   toCampPhase() {
+    if (!state.campaign) return;
     state.phase = 'camp';
+    maybeChallenge(state.campaign);
+    notify();
+  },
+
+  resolveChallenge(answer: string) {
+    if (!state.campaign) return;
+    resolveChallenge(state.campaign, answer);
     notify();
   },
 
@@ -67,7 +89,13 @@ export const actions = {
 
   council() {
     if (!state.campaign || state.campaign.heldCouncil) return;
-    holdCouncil(state.campaign);
+    buildCouncilProposals(state.campaign);
+    notify();
+  },
+
+  endorse(officerId: string) {
+    if (!state.campaign) return;
+    endorseProposal(state.campaign, officerId);
     notify();
   },
 
@@ -130,9 +158,16 @@ export const actions = {
   },
 
   beginBattle() {
-    if (!state.battle) return;
+    if (!state.battle || !state.campaign) return;
+    applyDeploymentPolitics(state.battle, state.campaign);
     state.phase = 'battle';
     actions.setSpeed('normal');
+    notify();
+  },
+
+  soundSignal() {
+    if (!state.battle || !state.campaign) return;
+    soundSignal(state.battle, state.campaign);
     notify();
   },
 
@@ -171,6 +206,36 @@ export const actions = {
     if (clock) { clearInterval(clock); clock = undefined; }
     state.aar = buildAfterAction(state.battle, state.campaign);
     state.phase = 'after-action';
+    notify();
+  },
+
+  commend(officerId: string) {
+    if (!state.campaign || !state.aar || state.aar.commendedId !== undefined) return;
+    state.aar.commendedId = officerId;
+    commendOfficer(state.campaign, officerId);
+    notify();
+  },
+
+  censure(officerId: string) {
+    if (!state.campaign || !state.aar || state.aar.censuredId !== undefined) return;
+    state.aar.censuredId = officerId;
+    censureOfficer(state.campaign, officerId);
+    notify();
+  },
+
+  marchOn() {
+    if (!state.campaign || !state.battle || !state.aar?.canMarchOn) return;
+    // carry the survivors forward: routed men are gone, the rest march
+    const survivors: Record<string, number> = {};
+    for (const u of state.battle.units) {
+      if (u.side === 'friend') survivors[u.id] = u.routed ? Math.round(u.menStart * 0.35) : u.men;
+    }
+    nextOperation(state.campaign, survivors);
+    state.battle = undefined;
+    state.aar = undefined;
+    state.assignments = undefined;
+    state.personalCommand = undefined;
+    state.phase = 'march';
     notify();
   },
 

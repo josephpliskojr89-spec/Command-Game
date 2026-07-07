@@ -6,6 +6,7 @@ import { makeRng } from './rng.ts';
 import { ERAS } from './era.ts';
 import { shortName } from './officer.ts';
 import { lossFraction } from './battle.ts';
+import { applyOutcomeToWar } from './campaign.ts';
 import type {
   AfterAction, BattleState, CampaignState, Officer, OfficerVerdict, OutcomeKind,
 } from './types.ts';
@@ -35,9 +36,11 @@ export function buildAfterAction(bs: BattleState, c: CampaignState): AfterAction
 
   // ---- key moments: the memorable events, in order --------------------
   const interesting = bs.events.filter((e) =>
-    ['clash', 'rout', 'rally', 'destroyed', 'interpretation', 'autonomy', 'withdrawal', 'messenger-lost'].includes(e.kind),
+    ['clash', 'rout', 'rally', 'destroyed', 'interpretation', 'autonomy', 'withdrawal',
+     'messenger-lost', 'officer-killed', 'officer-wounded', 'enemy-officer-killed',
+     'looting', 'camp-threatened', 'signal', 'signal-missed', 'grudge-sighted'].includes(e.kind),
   );
-  const keyMoments = interesting.slice(0, 14).map((e) => `[${formatTick(e.tick)}] ${e.text}`);
+  const keyMoments = interesting.slice(0, 16).map((e) => `[${formatTick(e.tick)}] ${e.text}`);
 
   // ---- officer verdicts ------------------------------------------------
   const officerVerdicts: OfficerVerdict[] = [];
@@ -78,8 +81,37 @@ export function buildAfterAction(bs: BattleState, c: CampaignState): AfterAction
 
   chronicle.push(closingParagraph(outcome, c, fLost, eLost));
 
-  // ---- ruler judgment ---------------------------------------------------
+  // ---- grudges: scores settled and scores opened -----------------------
+  const grudgeNotes: string[] = [];
+  for (const e of bs.events) {
+    if (e.kind === 'grudge-formed' || e.kind === 'grudge-sighted') grudgeNotes.push(e.text);
+  }
+  for (const o of c.officers) {
+    for (const g of o.grudges) {
+      const foe = c.enemyOfficers.find((x) => x.id === g.enemyOfficerId);
+      if (foe?.dead && g.kind === 'triumph') {
+        grudgeNotes.push(`${o.title} ${shortName(o.name)}'s account with ${g.enemyName} is closed — permanently.`);
+      }
+    }
+  }
+
+  // ---- officers wounded or killed ---------------------------------------
+  const casualtyNotes: string[] = [];
+  for (const e of bs.events) {
+    if (e.kind === 'officer-killed' || e.kind === 'officer-wounded' || e.kind === 'enemy-officer-killed') {
+      casualtyNotes.push(e.text);
+    }
+  }
+
+  // ---- the war beyond this field ----------------------------------------
+  applyOutcomeToWar(c, outcome);
   const { judgment, strategic } = rulerVerdict(outcome, c, fLost, fStart);
+  let warEndText: string | undefined;
+  if (c.warOver === 'triumph') {
+    warEndText = `The war is won. ${capitalize(c.enemyName)} can no longer keep an army in the field, and the terms will be written in your ruler's tent — with you standing at the right hand. The chroniclers will argue about your battles for a century. Your officers will argue about them tonight, which matters more to you than you expected.`;
+  } else if (c.warOver === 'dismissed') {
+    warEndText = `A courier arrives within the week. Your command is ended — the phrasing is gracious, the meaning is not. Another man will finish this war with your army and your officers, and whatever they accomplish will be measured against what you lost. You are advised to travel. You take the advice.`;
+  }
 
   return {
     outcome,
@@ -93,6 +125,11 @@ export function buildAfterAction(bs: BattleState, c: CampaignState): AfterAction
     enemyStart: eStart,
     rulerJudgment: judgment,
     strategicResult: strategic,
+    grudgeNotes: grudgeNotes.slice(0, 8),
+    casualtyNotes,
+    canMarchOn: !c.warOver,
+    warEnd: c.warOver,
+    warEndText,
   };
 }
 
@@ -103,6 +140,12 @@ function judgeOfficer(o: Officer, playerLed: boolean, broke: boolean, bs: Battle
   let verdict: string;
 
   const refused = bs.events.some((e) => e.officerId === o.id && e.text.includes('refused'));
+
+  if (o.dead) {
+    grade = p.blunders > 1 ? 'questionable' : 'distinguished';
+    verdict = `${who} fell at the head of his men. ${p.blunders > 1 ? 'Death has settled the questions his conduct raised; the chronicle will be kinder than the facts.' : 'Whatever else is said of this day, that will be said first.'}`;
+    return { officerId: o.id, name: o.name, title: o.title, verdict, grade };
+  }
 
   if (playerLed) {
     grade = 'creditable';

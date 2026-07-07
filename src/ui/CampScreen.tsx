@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ERAS } from '../sim/era.ts';
 import { enemyEstimate } from '../sim/campaign.ts';
+import { shortName } from '../sim/officer.ts';
 import type { CampaignState } from '../sim/types.ts';
 import { actions } from '../store.ts';
 import { ReportLog, StatBar } from './shared.tsx';
@@ -71,9 +72,18 @@ export function CampScreen({ campaign }: { campaign: CampaignState }) {
                   Hold a council of war with your officers
                 </button>
               </div>
-              <button className="primary" onClick={actions.toDeployment}>
+              {campaign.councilProposals && campaign.endorsedOfficerId === undefined && (
+                <CouncilPanel campaign={campaign} />
+              )}
+              {campaign.cavHint && (
+                <p className="small" style={{ color: 'var(--gold)' }}>
+                  The plan you endorsed expects the enemy horse on your {campaign.cavHint}. Your map now says so too.
+                </p>
+              )}
+              <button className="primary" disabled={!!campaign.pendingChallenge} onClick={actions.toDeployment}>
                 Dawn — deploy the army
               </button>
+              {campaign.pendingChallenge && <span className="small" style={{ marginLeft: 10 }}>There is a man outside the camp who requires an answer first.</span>}
             </div>
           )}
 
@@ -102,6 +112,75 @@ export function CampScreen({ campaign }: { campaign: CampaignState }) {
             <h3>Dispatches</h3>
             <ReportLog reports={campaign.log} formatWhen={(d) => `Day ${d}`} />
           </div>
+        </div>
+      </div>
+
+      {campaign.pendingChallenge && campChosen && <ChallengeModal campaign={campaign} />}
+    </div>
+  );
+}
+
+// The council of war: three men argue three battles. Endorsing one is a
+// public act of trust in a judgment you cannot verify until it is tested.
+function CouncilPanel({ campaign }: { campaign: CampaignState }) {
+  return (
+    <div style={{ margin: '10px 0', padding: '10px 12px', background: 'var(--panel2)', border: '1px solid var(--line)', borderRadius: 4 }}>
+      <div className="group-label" style={{ fontSize: 12, color: 'var(--gold)', marginBottom: 8 }}>
+        The council speaks. Whose reading of the battle do you endorse?
+      </div>
+      {campaign.councilProposals!.map((p) => {
+        const o = campaign.officers.find((x) => x.id === p.officerId)!;
+        return (
+          <button
+            key={p.officerId}
+            className="event-opt"
+            style={{ display: 'block', width: '100%', textAlign: 'left', marginBottom: 6, padding: '8px 10px' }}
+            onClick={() => actions.endorse(p.officerId)}
+          >
+            <span className="opt-label">{o.title} {shortName(o.name)}</span>
+            <span className="opt-detail">{p.summary}</span>
+          </button>
+        );
+      })}
+      <button style={{ width: '100%' }} onClick={() => actions.endorse('')}>
+        Thank them all and endorse no one
+      </button>
+      <div className="hint" style={{ marginTop: 6 }}>
+        The man you endorse will fight tomorrow with your trust at his back — and his claim about the enemy horse will be drawn onto your map, true or not.
+      </div>
+    </div>
+  );
+}
+
+// A champion between the lines. Honor cultures keep books, and the whole
+// army is the audience.
+function ChallengeModal({ campaign }: { campaign: CampaignState }) {
+  const champion = campaign.enemyOfficers.find((o) => o.id === campaign.pendingChallenge!.enemyOfficerId)!;
+  const available = campaign.officers.filter((o) => !o.dead && !o.wounded);
+  return (
+    <div className="modal-back">
+      <div className="modal" style={{ maxWidth: 640 }}>
+        <h3>A Challenge Between the Lines</h3>
+        <div className="event-text">
+          {champion.name}, {champion.title}, rides the length of your pickets at a walk, calling for any officer
+          who dares meet him alone between the armies. Scouts say he is {champion.epithet}. The men have stopped
+          eating to watch what you do.
+        </div>
+        <div className="choice-group">
+          <div className="group-label">Who answers?</div>
+          <div className="opts">
+            {available.map((o) => (
+              <button key={o.id} onClick={() => actions.resolveChallenge(o.id)}>
+                {o.title} {shortName(o.name)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <button className="danger" style={{ width: '100%' }} onClick={() => actions.resolveChallenge('refuse')}>
+          No one. This is theater, and I will not spend an officer on it.
+        </button>
+        <div className="hint" style={{ marginTop: 6 }}>
+          Victory would put fire in the whole army. Defeat would cost you a man and the men their supper's worth of confidence. Refusal is free — unless one of your prouder officers decides it isn't.
         </div>
       </div>
     </div>

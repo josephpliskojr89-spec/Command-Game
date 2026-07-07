@@ -77,6 +77,13 @@ export function BattleScreen({ battle, campaign }: { battle: BattleState; campai
               </button>
             ))}
             <button
+              disabled={battle.signalSounded || !!battle.outcome || !battle.units.some((u) => u.side === 'friend' && !u.routed && (u.order.type === 'attack-on-signal' || u.pendingOrder?.order.type === 'attack-on-signal'))}
+              title="Releases every formation standing under an 'attack on signal' order — instantly, if they hear it"
+              onClick={actions.soundSignal}
+            >
+              📯 Sound the horns
+            </button>
+            <button
               className="danger"
               disabled={battle.withdrawalOrdered || !!battle.outcome}
               onClick={() => { if (confirm('Order a general withdrawal? There is no countermanding it.')) actions.generalWithdrawal(); }}
@@ -170,6 +177,7 @@ export function BattleScreen({ battle, campaign }: { battle: BattleState; campai
                 <button onClick={() => startOrder('pursue')}>Pursue</button>
                 <button onClick={() => startOrder('rally')}>Rally</button>
                 <button onClick={() => startOrder('protect-camp')}>Protect camp</button>
+                <button onClick={() => startOrder('attack-on-signal', 'point')} title="A standing order: hold until the horns sound, then attack the marked ground">Attack on signal…</button>
                 <button onClick={() => startOrder('withdraw')}>Withdraw</button>
               </div>
               <div className="hint" style={{ marginTop: 8 }}>

@@ -38,6 +38,43 @@ npm run sim      # headless battle smoke test (npm run sim -- <seed>)
 6. **Read the after-action report**: a chronicle of what actually happened,
    verdicts on each officer, the butcher's bill, and your ruler's judgment.
 
+## The depth pass
+
+The second pass adds the systems that make officers worth *learning*
+(see `DESIGN.md` for the full design document and roadmap):
+
+- **Reputation vs. truth** — epithets are generated from what the world
+  *says* about a man, and for two officers per campaign the world is badly
+  wrong. The only reliable record is the "what you have seen" dossier built
+  from observed behavior. One officer is the ruler's appointee, gilded at
+  court whatever the truth of him.
+- **Vanguard engagements** — twice per march a detachment fight forces you
+  to pick who leads (on reputation) and learn who he is (from results).
+- **Grudges** — your officers remember the *named enemy officers* who beat
+  them, bled them, or lost to them. Grudges persist across battles and
+  operations, and bend order interpretation: a humiliated man over-executes
+  anything pointed at his enemy and chokes on orders that take him away.
+- **Named enemy officers** — with temperaments that shape the enemy plan,
+  banners your scouts identify, and lives that can end in duels or melee.
+- **The council speaks** — officers argue rival battle plans; endorsing one
+  is public trust, and his claim about the enemy cavalry is drawn onto your
+  map, true or false.
+- **The champion's challenge** — answer it, refuse it, or watch a proud
+  officer defy you and ride out anyway.
+- **Armies that feel their conditions** — loot madness at the enemy camp
+  (worse if you promised the men plunder), panic when your own camp is
+  threatened, officer casualties with know-nothing deputies, hunger, heat,
+  rain, and brittle obedience from harsh campaign discipline.
+- **Officers color their reports** — pride hides distress, ambition gilds
+  success, fear triples the enemy.
+- **Signals** — "attack on signal" standing orders released instantly by
+  the horns... for every formation that hears them and chooses to.
+- **The post of honour** — deployment is a personnel statement; proud men
+  given the rear fight the whole day slighted.
+- **The war continues** — commend and censure after each battle, then march
+  on: same officers, same grudges, replacements for the dead, a ruler's
+  patience meter, and a war won or a command lost in about three operations.
+
 ## Design notes
 
 - **Officers are the game.** Every formation is commanded by an officer with

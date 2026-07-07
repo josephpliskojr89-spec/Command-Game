@@ -22,17 +22,37 @@ export interface Traits {
   trust: number;      // faith in the player's judgment (dynamic)
 }
 
+// A grudge binds one of your officers to a *named enemy officer* they have
+// personally fought. Grudges persist across battles and operations.
+export interface Grudge {
+  enemyOfficerId: string;
+  enemyName: string; // display name, so prose survives the enemy's death
+  kind: 'humiliation' | 'triumph' | 'blood';
+  note: string;      // where it came from, in prose
+}
+
 export interface Officer {
   id: string;
   name: string;
   title: string;      // era-flavored rank
-  epithet: string;    // the visible one-line personality read
+  epithet: string;    // the visible one-line read — derived from REPUTATION
   background: string; // longer visible history blurb
-  traits: Traits;     // hidden
+  traits: Traits;     // hidden truth
+  // What the world says of him. Usually near the truth; for some men,
+  // dangerously wrong. The epithet is generated from THIS, not from traits.
+  reputation: Traits;
+  // Behavior you have personally witnessed — the only reliable record.
+  observations: string[];
+  grudges: Grudge[];
   specialty: UnitClass;
   confidence: number; // 0..100, dynamic (campaign + battle events)
   deeds: string[];    // notable actions, grows during play
   rivalId?: string;
+  wounded?: boolean;  // carried a wound into this operation
+  dead?: boolean;
+  fresh?: boolean;    // a replacement — no track record at all
+  playerEndorsed?: boolean; // you blessed his plan at the council (this battle)
+  honorSlighted?: boolean;  // given a post beneath his pride (this battle)
   // battle bookkeeping for the after-action report
   perf: {
     ordersReceived: number;
@@ -41,6 +61,17 @@ export interface Officer {
     heroics: number;     // good outcomes from own judgment
     blunders: number;    // bad outcomes from own judgment
   };
+}
+
+// The men across the field have names too. Your officers remember them.
+export interface EnemyOfficer {
+  id: string;
+  name: string;
+  title: string;
+  epithet: string; // what your scouts and prisoners say of him
+  traits: { competence: number; aggression: number; cunning: number };
+  renown: number;  // 0..100, how much beating (or losing to) him matters
+  dead?: boolean;
 }
 
 // ---------------------------------------------------------------- orders
@@ -58,7 +89,8 @@ export type OrderType =
   | 'pursue'
   | 'rally'
   | 'protect-camp'
-  | 'refuse-flank';
+  | 'refuse-flank'
+  | 'attack-on-signal'; // standing order: strike when the horns sound
 
 export type Urgency = 'measured' | 'urgent';
 
@@ -109,7 +141,8 @@ export type UnitStatus =
   | 'rallying'
   | 'pursuing'
   | 'withdrawing'
-  | 'disordered';
+  | 'disordered'
+  | 'looting';
 
 export interface Unit {
   id: string;
@@ -132,7 +165,7 @@ export interface Unit {
   y: number;
   facing: number; // radians, 0 = east
   status: UnitStatus;
-  officerId?: string;
+  officerId?: string;      // friendly: Officer id; enemy: EnemyOfficer id
   playerLed?: boolean;
   order: ActiveOrder;
   // pending order the officer accepted but hasn't started (delay)
@@ -141,6 +174,9 @@ export interface Unit {
   chargeBonus: number; // decays after first contact
   routed?: boolean;    // permanently broken / left field
   killsDealt: number;
+  officerDown?: 'wounded' | 'dead'; // command has devolved to a subordinate
+  lootingUntil?: number;            // tick when the men can be dragged out of the enemy camp
+  hungry?: boolean;                 // marched to battle on empty wagons
 }
 
 // ---------------------------------------------------------------- terrain
@@ -237,6 +273,11 @@ export interface BattleState {
   // ambient conditions carried in from the campaign
   weather: Weather;
   seed: number;
+  // grudge bookkeeping: officers who have sighted their man across the field
+  grudgesSighted: string[]; // officerId:enemyOfficerId keys, reported once
+  signalSounded?: boolean;  // the horns have blown (attack-on-signal trigger)
+  campSacked?: boolean;     // the enemy got into YOUR camp
+  lootingHappened?: boolean; // your men got into THEIRS and stopped fighting
 }
 
 // ---------------------------------------------------------------- campaign
@@ -268,10 +309,32 @@ export type Phase =
   | 'battle'
   | 'after-action';
 
+// A vanguard action on the march: a small detachment fight, led by one
+// officer of your choosing, against a named enemy officer. This is where
+// you learn who your officers really are — and where grudges are born.
+export interface Engagement {
+  id: string;
+  title: string;
+  text: string;
+  enemyOfficerId: string;
+  stakes: string; // what winning/losing means, in prose
+}
+
+// One officer's plan for the coming battle, offered at the council of war.
+// Whether the plan is any GOOD depends on his true competence — which you
+// cannot see. Endorsing a plan is an act of trust with real consequences.
+export interface CouncilProposal {
+  officerId: string;
+  summary: string;      // the plan, in his voice
+  hiddenSound: boolean; // is the man actually right?
+  cavClaim: 'left' | 'right'; // where he says the enemy horse will be
+}
+
 export interface CampaignState {
   seed: number;
   era: EraId;
   day: number;
+  operation: number; // which operation of the war this is (1-based)
   distance: number; // days of march remaining to the enemy
   // army-level trackers, 0..100 unless noted
   food: number;     // days of food, roughly 0..20
@@ -281,12 +344,24 @@ export interface CampaignState {
   cohesion: number;
   intel: number;    // quality of enemy picture
   disciplineTone: number; // harsh(0) .. indulgent(100), shifts events
+  rulerPatience: number;  // 0..100 — your standing with the throne
   weather: Weather;
   stragglers: number; // men lost on the march
   officers: Officer[];
+  enemyOfficers: EnemyOfficer[];
+  enemyCavSide: 'left' | 'right'; // the truth, decided now, revealed maybe
   log: Report[];
   pendingEvent?: CampaignEvent;
+  pendingEngagement?: Engagement;
+  engagementsDone: string[];
+  // an enemy champion has ridden out before the camp
+  pendingChallenge?: { enemyOfficerId: string; volunteerId?: string };
+  challengeDone?: boolean;
+  plunderPromised?: boolean;
   heldCouncil?: boolean;
+  councilProposals?: CouncilProposal[];
+  endorsedOfficerId?: string; // whose plan you blessed ('' = none)
+  cavHint?: 'left' | 'right'; // what you were TOLD about the enemy horse
   campPlacement?: CampPlacement;
   fortifiedCamp?: boolean;
   scoutedWide?: boolean;
@@ -295,6 +370,10 @@ export interface CampaignState {
   enemyName: string;
   placeName: string;
   nextReportId: number;
+  // strength carried between operations: formationId -> men (undefined = full)
+  unitStrength?: Record<string, number>;
+  veteranBlood?: number; // 0..100 how blooded the army is (training bonus)
+  warOver?: 'dismissed' | 'triumph'; // set when the war ends
 }
 
 export interface GameState {
@@ -327,4 +406,11 @@ export interface AfterAction {
   enemyStart: number;
   rulerJudgment: string;
   strategicResult: string;
+  grudgeNotes: string[];   // scores settled and scores opened
+  casualtyNotes: string[]; // officers wounded or killed
+  canMarchOn: boolean;     // the war continues and you still command
+  warEnd?: 'dismissed' | 'triumph';
+  warEndText?: string;
+  commendedId?: string;    // set when the player hands down judgment
+  censuredId?: string;
 }

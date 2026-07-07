@@ -63,20 +63,40 @@ export function initialsOf(name: string): string {
 
 export function OfficerCard({ officer, extra }: { officer: Officer; extra?: ReactNode }) {
   return (
-    <div className="officer-card">
+    <div className="officer-card" style={officer.dead ? { opacity: 0.55 } : undefined}>
       <div className="oc-head">
         <div className="initials">{initialsOf(officer.name)}</div>
         <div>
-          <div className="oc-name">{officer.name}</div>
+          <div className="oc-name">
+            {officer.name}
+            {officer.dead && <span className="badge dead"> fallen</span>}
+            {!officer.dead && officer.wounded && <span className="badge wounded"> wounded</span>}
+            {officer.fresh && <span className="badge fresh"> unknown quantity</span>}
+          </div>
           <div className="oc-title">{officer.title}</div>
         </div>
       </div>
-      <div className="epithet">“{officer.epithet}”</div>
+      <div className="epithet">“{officer.epithet}” <span className="rep-tag">— his reputation</span></div>
       <div className="background">{officer.background}</div>
+      {officer.observations.length > 0 && (
+        <div className="observations">
+          <div className="obs-label">What you have seen with your own eyes:</div>
+          {officer.observations.slice(-3).map((o, i) => <div key={i} className="obs-line">· {o}</div>)}
+        </div>
+      )}
+      {officer.grudges.length > 0 && (
+        <div className="grudges">
+          {officer.grudges.slice(-2).map((g, i) => (
+            <div key={i} className="grudge-line">
+              {g.kind === 'triumph' ? '⚑' : '✕'} {g.note}
+            </div>
+          ))}
+        </div>
+      )}
       {officer.deeds.length > 0 && (
         <div className="deeds">Known for: {officer.deeds[officer.deeds.length - 1]}</div>
       )}
-      <div className="mood">{confidenceWord(officer)}</div>
+      {!officer.dead && <div className="mood">{confidenceWord(officer)}</div>}
       {extra}
     </div>
   );
