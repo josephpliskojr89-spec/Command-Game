@@ -4,7 +4,7 @@ import { enemyEstimate } from '../sim/campaign.ts';
 import { shortName } from '../sim/officer.ts';
 import type { CampaignState } from '../sim/types.ts';
 import { actions } from '../store.ts';
-import { ReportLog, StatBar } from './shared.tsx';
+import { OfficerPickButton, ReportLog, StatBar } from './shared.tsx';
 
 export function CampScreen({ campaign }: { campaign: CampaignState }) {
   const era = ERAS[campaign.era];
@@ -131,15 +131,16 @@ function CouncilPanel({ campaign }: { campaign: CampaignState }) {
       {campaign.councilProposals!.map((p) => {
         const o = campaign.officers.find((x) => x.id === p.officerId)!;
         return (
-          <button
+          <OfficerPickButton
             key={p.officerId}
-            className="event-opt"
-            style={{ display: 'block', width: '100%', textAlign: 'left', marginBottom: 6, padding: '8px 10px' }}
+            officer={o}
+            className="event-opt council-proposal"
             onClick={() => actions.endorse(p.officerId)}
-          >
-            <span className="opt-label">{o.title} {shortName(o.name)}</span>
-            <span className="opt-detail">{p.summary}</span>
-          </button>
+            label={<>
+              <span className="opt-label">{o.title} {shortName(o.name)}</span>
+              <span className="opt-detail">{p.summary}</span>
+            </>}
+          />
         );
       })}
       <button style={{ width: '100%' }} onClick={() => actions.endorse('')}>
@@ -167,12 +168,10 @@ function ChallengeModal({ campaign }: { campaign: CampaignState }) {
           eating to watch what you do.
         </div>
         <div className="choice-group">
-          <div className="group-label">Who answers?</div>
+          <div className="group-label">Who answers? <span className="small">(hover a name for what you know of him)</span></div>
           <div className="opts">
             {available.map((o) => (
-              <button key={o.id} onClick={() => actions.resolveChallenge(o.id)}>
-                {o.title} {shortName(o.name)}
-              </button>
+              <OfficerPickButton key={o.id} officer={o} onClick={() => actions.resolveChallenge(o.id)} />
             ))}
           </div>
         </div>

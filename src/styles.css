@@ -160,6 +160,46 @@ select {
 .badge.dead { background: #3a1f1a; color: #d08070; }
 .badge.wounded { background: #3a2f1c; color: var(--warn); }
 .badge.fresh { background: #22301f; color: var(--good); }
+.badge.kin { background: #2c2438; color: #b9a6d6; }
+
+/* roster grid under the army */
+.officer-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(258px, 1fr)); gap: 10px; align-items: start; }
+.officer-card.clickable { cursor: pointer; transition: border-color 0.1s; }
+.officer-card.clickable:hover { border-color: var(--gold); }
+.officer-card .obs-line.more { color: var(--ink-dim); font-style: italic; }
+.officer-card .oc-open-hint { margin-top: 8px; font-size: 11px; color: var(--ink-dim); letter-spacing: 0.5px; }
+.officer-card.clickable:hover .oc-open-hint { color: var(--gold); }
+
+/* the full-record dossier */
+.modal.dossier { max-width: 620px; max-height: 86vh; overflow-y: auto; }
+.dossier .oc-head { display: flex; gap: 12px; align-items: center; }
+.dossier .initials { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--gold);
+  display: flex; align-items: center; justify-content: center; font-weight: bold; color: var(--gold); flex-shrink: 0; }
+.dossier-section { margin: 14px 0; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.dossier-section:last-of-type { border-bottom: none; }
+.ds-label { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--gold); margin-bottom: 6px; }
+.dossier .epithet { font-style: italic; font-size: 14px; margin-bottom: 6px; }
+.dossier .background { color: var(--ink-dim); font-size: 13px; }
+.dossier .obs-line { font-size: 13.5px; padding: 3px 0; }
+.dossier .grudge-line { font-size: 13.5px; color: #d08070; padding: 3px 0; }
+.dossier .mood { font-size: 13.5px; color: var(--ink-dim); font-style: italic; }
+
+/* floating hover card on officer-pick buttons */
+.officer-hovercard {
+  position: fixed; z-index: 120; background: var(--panel); border: 1px solid var(--gold);
+  border-radius: 4px; padding: 12px 14px; box-shadow: 0 6px 24px rgba(0,0,0,0.6);
+  pointer-events: none; font-family: inherit;
+}
+.officer-hovercard .hc-name { font-weight: bold; color: var(--ink); }
+.officer-hovercard .hc-title { font-size: 12px; color: var(--ink-dim); }
+.officer-hovercard .epithet { font-style: italic; font-size: 13px; }
+.officer-hovercard .rep-tag { font-size: 10px; color: var(--ink-dim); letter-spacing: 1px; font-style: normal; }
+.officer-hovercard .observations { padding: 6px 8px; background: #1a1610; border-left: 2px solid var(--gold); }
+.officer-hovercard .obs-label { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--gold); margin-bottom: 3px; }
+.officer-hovercard .obs-line { font-size: 12px; color: var(--ink); padding: 1px 0; }
+.officer-hovercard .grudge-line { font-size: 12px; color: #d08070; padding: 1px 0; }
+.officer-hovercard .mood { font-size: 12px; color: var(--ink-dim); font-style: italic; }
+button.council-proposal { display: block; width: 100%; text-align: left; margin-bottom: 6px; padding: 8px 10px; }
 
 /* ------------------------------------------------ event modal */
 .modal-back {

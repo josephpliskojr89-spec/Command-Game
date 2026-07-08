@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { shortName } from '../sim/officer.ts';
 import type { AfterAction, CampaignState } from '../sim/types.ts';
 import { actions } from '../store.ts';
+import { OfficerPickButton } from './shared.tsx';
 
 export function AfterActionScreen({ aar, campaign }: { aar: AfterAction; campaign: CampaignState }) {
   return (
@@ -156,16 +157,15 @@ function JudgmentPanel({ aar, campaign }: { aar: AfterAction; campaign: Campaign
       {mode && (
         <div className="row">
           {living.map((o) => (
-            <button
+            <OfficerPickButton
               key={o.id}
+              officer={o}
               onClick={() => {
                 if (mode === 'commend') actions.commend(o.id);
                 else actions.censure(o.id);
                 setMode(undefined);
               }}
-            >
-              {o.title} {shortName(o.name)}
-            </button>
+            />
           ))}
         </div>
       )}

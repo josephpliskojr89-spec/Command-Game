@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { ERAS } from '../sim/era.ts';
 import { shortName } from '../sim/officer.ts';
 import { resolveWord } from '../sim/personal.ts';
-import type { CampaignState } from '../sim/types.ts';
+import type { CampaignState, Officer } from '../sim/types.ts';
 import type { EngagementApproach, MarchChoices } from '../sim/campaign.ts';
 import { actions } from '../store.ts';
-import { OfficerCard, ReportLog, StatBar } from './shared.tsx';
+import { OfficerCard, OfficerDossier, OfficerPickButton, ReportLog, StatBar } from './shared.tsx';
 
 const WEATHER_LABEL: Record<string, string> = {
   clear: 'Clear skies', rain: 'Rain', heat: 'Heat', fog: 'Fog',
@@ -16,6 +16,7 @@ export function CampaignScreen({ campaign }: { campaign: CampaignState }) {
   const [pace, setPace] = useState<MarchChoices['pace']>('steady');
   const [supply, setSupply] = useState<MarchChoices['supply']>('ration');
   const [scouts, setScouts] = useState<MarchChoices['scouts']>('close');
+  const [dossier, setDossier] = useState<Officer | undefined>();
   const arrived = campaign.distance <= 0;
 
   return (
@@ -102,6 +103,19 @@ export function CampaignScreen({ campaign }: { campaign: CampaignState }) {
               You know your army the way a rider knows a horse — by feel, not by figures.
             </div>
           </div>
+
+          <div className="panel">
+            <h3>Council of Officers</h3>
+            <div className="hint" style={{ marginBottom: 10 }}>
+              Every man here is known to you only by reputation and by what you have watched him do.
+              Click a card for his full record.
+            </div>
+            <div className="officer-grid">
+              {campaign.officers.map((o) => (
+                <OfficerCard key={o.id} officer={o} onOpen={setDossier} />
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="col-side">
@@ -110,14 +124,10 @@ export function CampaignScreen({ campaign }: { campaign: CampaignState }) {
             <h3>Dispatches &amp; The March</h3>
             <ReportLog reports={campaign.log} formatWhen={(d) => `Day ${d}`} />
           </div>
-          <div className="panel">
-            <h3>Council of Officers</h3>
-            {campaign.officers.map((o) => (
-              <OfficerCard key={o.id} officer={o} />
-            ))}
-          </div>
         </div>
       </div>
+
+      {dossier && <OfficerDossier officer={dossier} onClose={() => setDossier(undefined)} />}
 
       {campaign.pendingEvent && !campaign.pendingEngagement && (
         <div className="modal-back">
@@ -154,16 +164,15 @@ function EngagementModal({ campaign }: { campaign: CampaignState }) {
         <div className="event-text">{eng.text}</div>
         <div className="hint" style={{ marginBottom: 10 }}>{eng.stakes}</div>
         <div className="choice-group">
-          <div className="group-label">Who leads the detachment?</div>
+          <div className="group-label">Who leads the detachment? <span className="small">(hover a name for what you know of him)</span></div>
           <div className="opts">
             {available.map((o) => (
-              <button
+              <OfficerPickButton
                 key={o.id}
-                className={officerId === o.id ? 'active' : ''}
+                officer={o}
+                active={officerId === o.id}
                 onClick={() => setOfficerId(o.id)}
-              >
-                {o.title} {shortName(o.name)}
-              </button>
+              />
             ))}
           </div>
           {chosen && (
