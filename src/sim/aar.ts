@@ -3,7 +3,7 @@
 // reading it knowing exactly which human beings won or lost them the day.
 
 import { makeRng } from './rng.ts';
-import { ERAS } from './era.ts';
+import { ERAS, armyMuster } from './era.ts';
 import { shortName } from './officer.ts';
 import { lossFraction } from './battle.ts';
 import { applyOutcomeToWar } from './campaign.ts';
@@ -107,12 +107,47 @@ export function buildAfterAction(bs: BattleState, c: CampaignState): AfterAction
   // ---- the man inside the general ----------------------------------------
   const personalNotes = personalAfterBattle(c, outcome, bs.campSacked === true);
 
+  // ---- the enemy's war effort bleeds -------------------------------------
+  // The fielded army came out of a finite pool. The dead never return;
+  // of the scattered, only some find their way back to the standards —
+  // fewer still after a decisive rout, when your pursuit owns the roads.
+  const eSurvivors = eUnits.reduce((s, u) => s + (u.routed ? 0 : u.men), 0);
+  const eScattered = eStart - eSurvivors;
+  const returnRate = outcome === 'decisive-victory' ? 0.1 : 0.25;
+  c.enemyWarStrength = Math.max(
+    0,
+    c.enemyWarStrength - eStart + eSurvivors + Math.round(eScattered * returnRate),
+  );
+
+  // ---- the record of the war ---------------------------------------------
+  c.warRecord.push({
+    operation: c.operation,
+    day: c.day,
+    place: c.placeName,
+    outcome,
+    outcomeTitle: OUTCOME_TITLES[outcome],
+    friendlyLosses: fLost,
+    enemyLosses: eLost,
+  });
+
   // ---- the war beyond this field ----------------------------------------
   applyOutcomeToWar(c, outcome);
+  // Annihilation is its own verdict: if they cannot field another army,
+  // there is no war left to continue, whatever the political score says.
+  // (Yardstick: your own full muster — an enemy who cannot raise half of
+  // it will not offer battle again.)
+  const won = outcome.includes('victory');
+  let annihilated = false;
+  if (!c.warOver && won && c.enemyWarStrength < armyMuster(ERAS[c.era]) * 0.55) {
+    c.warOver = 'triumph';
+    annihilated = true;
+  }
   const { judgment, strategic } = rulerVerdict(outcome, c, fLost, fStart);
   let warEndText: string | undefined;
   if (c.warOver === 'triumph') {
-    warEndText = `The war is won. ${capitalize(c.enemyName)} can no longer keep an army in the field, and the terms will be written in your ruler's tent — with you standing at the right hand. The chroniclers will argue about your battles for a century. Your officers will argue about them tonight, which matters more to you than you expected.`;
+    warEndText = annihilated
+      ? `There is no enemy army anymore. Not a beaten one — none. What you did not kill or capture on this field is walking home in ones and twos, and no muster, however desperate, will make soldiers of them again this generation. The war is over because you have removed the other side of it. The terms will be whatever your ruler feels like writing.`
+      : `The war is won. ${capitalize(c.enemyName)} can no longer keep an army in the field, and the terms will be written in your ruler's tent — with you standing at the right hand. The chroniclers will argue about your battles for a century. Your officers will argue about them tonight, which matters more to you than you expected.`;
   } else if (c.warOver === 'dismissed') {
     warEndText = `A courier arrives within the week. Your command is ended — the phrasing is gracious, the meaning is not. Another man will finish this war with your army and your officers, and whatever they accomplish will be measured against what you lost. You are advised to travel. You take the advice.`;
   }

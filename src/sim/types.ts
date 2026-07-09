@@ -285,6 +285,7 @@ export interface BattleState {
   // ambient conditions carried in from the campaign
   weather: Weather;
   seed: number;
+  armyScale: number; // era size multiplier; combat math keys off it
   // grudge bookkeeping: officers who have sighted their man across the field
   grudgesSighted: string[]; // officerId:enemyOfficerId keys, reported once
   signalSounded?: boolean;  // the horns have blown (attack-on-signal trigger)
@@ -343,6 +344,17 @@ export interface EnemyMemory {
   cavSide?: 'left' | 'right'; // where your cavalry did its work
   usedSignal?: boolean;       // you fight with prepared strokes
   playerPassive?: boolean;    // you like to receive the attack
+}
+
+// One battle in the war record.
+export interface WarRecordEntry {
+  operation: number;
+  day: number;
+  place: string;
+  outcome: OutcomeKind;
+  outcomeTitle: string;
+  friendlyLosses: number;
+  enemyLosses: number;
 }
 
 // ---------------------------------------------------------------- personal
@@ -456,6 +468,12 @@ export interface CampaignState {
   enemyMemory: EnemyMemory; // what they learned from your last battle
   forageDays?: number;      // the country gets eaten out
   warScore?: number;        // cumulative quality of your victories
+  // The enemy's total war effort: every man they can put in the field
+  // this war. Battles deplete it; only some of the scattered return.
+  // Destroy it, and there is no next battle — the war is simply over.
+  enemyWarStrength: number;
+  // The record of the war: every battle fought, and what it cost.
+  warRecord: WarRecordEntry[];
   log: Report[];
   pendingEvent?: CampaignEvent;
   pendingEngagement?: Engagement;

@@ -4,7 +4,7 @@
 // you treated them on the road.
 
 import { makeRng, type Rng } from './rng.ts';
-import { ERAS, type Era } from './era.ts';
+import { ERAS, armyMuster, formationMen, FORMATIONS, type Era } from './era.ts';
 import { addGrudge, generateEnemyOfficers, generateOfficers, observe, shortName } from './officer.ts';
 import { maybePersonalEvent, applyPersonalChoice, personalNextOperation } from './personal.ts';
 import type {
@@ -48,6 +48,10 @@ export function newCampaign(era: EraId, seed: number): CampaignState {
     enemyDoctrine: rng.pick(['rash', 'cunning', 'defensive', 'methodical'] as const),
     opKind: 'assault',
     enemyMemory: {},
+    // Their whole war effort: what they field, plus what they can raise.
+    // When this is spent, the war is over — no army, no war.
+    enemyWarStrength: Math.round(armyMuster(e) * rng.range(1.3, 1.5)),
+    warRecord: [],
     log: [],
     engagementsDone: [],
     objectiveText: e.objective(place),
@@ -62,7 +66,7 @@ export function newCampaign(era: EraId, seed: number): CampaignState {
     },
   };
   addLog(c, 'event', e.strategicOrder(place, e.rulerName), true);
-  addLog(c, 'logistics', `The army musters: some ${totalMuster()} men under arms, ${officers.length} officers of note, and food for roughly twelve days.`);
+  addLog(c, 'logistics', `The army musters: some ${armyMuster(e).toLocaleString()} men under arms, ${officers.length} officers of note, and food for roughly twelve days.`);
   addLog(c, 'scout', doctrineRumor(c), true);
   return c;
 }
@@ -83,8 +87,14 @@ function doctrineRumor(c: CampaignState): string {
   }
 }
 
-function totalMuster(): number {
-  return 4300; // 1200+800+800+400+500+600
+// The size of the enemy army fielded for THIS operation: base variance,
+// capped by what remains of their whole war effort. Must be kept in sync
+// with the identical computation in battle.ts setupBattle.
+export function enemyFielded(c: CampaignState): number {
+  const rng = makeRng(c.seed + c.operation * 7919).fork(555);
+  const scale = ERAS[c.era].armyScale;
+  const base = Math.round((4200 + rng.int(-400, 600)) * scale) + (c.operation - 1) * Math.round(150 * scale);
+  return Math.min(c.enemyWarStrength, base);
 }
 
 export function addLog(c: CampaignState, kind: Report['kind'], text: string, important = false) {
@@ -120,7 +130,7 @@ export function resolveMarchDay(c: CampaignState, choices: MarchChoices): void {
     c.distance -= rng.chance(0.75) ? 2 : 1;
     c.fatigue = clamp(c.fatigue + rng.int(14, 22));
     c.cohesion = clamp(c.cohesion - rng.int(4, 9));
-    const lost = rng.int(30, 90);
+    const lost = Math.round(rng.int(30, 90) * ERAS[c.era].armyScale);
     c.stragglers += lost;
     addLog(c, 'logistics', `Forced march. The column covers double ground, but ${lost} men fall out along the road — most will catch up, some will not.`);
     if (c.fatigue > 60) addLog(c, 'morale', 'The men are grumbling about the pace. Officers report sore feet, short tempers, and shorter rations of sleep.');
@@ -518,12 +528,18 @@ function finalScoutText(c: CampaignState, rng: Rng): string {
 // The picture of the enemy the player is shown pre-battle. Its accuracy
 // depends on intel. The real enemy army is generated separately in battle.ts.
 export function enemyEstimate(c: CampaignState): string[] {
-  const rng = makeRng(c.seed).fork(555);
-  const real = 4200 + rng.int(-400, 600); // must match battle.ts generation
-  const err = Math.round((100 - c.intel) * 18 * (rng.chance(0.5) ? 1 : -1));
-  const est = Math.max(1500, real + err);
+  const rng = makeRng(c.seed + c.operation * 7919).fork(555);
+  const scale = ERAS[c.era].armyScale;
+  const real = enemyFielded(c);
+  rng.int(-400, 600); // consume the draw so subsequent picks stay aligned
+  const err = Math.round((100 - c.intel) * 18 * scale * (rng.chance(0.5) ? 1 : -1));
+  const est = Math.max(Math.round(400 * scale), real + err);
+  const round = scale >= 3 ? 500 : 100;
   const lines: string[] = [];
-  lines.push(`Estimated enemy strength: around ${Math.round(est / 100) * 100} men.`);
+  lines.push(`Estimated enemy strength before you: around ${(Math.round(est / round) * round).toLocaleString()} men.`);
+  if (c.warRecord.length > 0 && c.enemyWarStrength < armyMuster(ERAS[c.era]) * 0.85) {
+    lines.push('This is not the army you met before — it is what could be re-mustered from it. The gaps in their line are real.');
+  }
   if (c.intel > 60) {
     lines.push('Composition: strong heavy infantry center, at least one cavalry wing, archers or slingers screening.');
     lines.push(`Their commander ${ERAS[c.era].enemyCommander} is reported ${rng.pick(['confident', 'cautious but present', 'under pressure from his own council'])}.`);
@@ -533,6 +549,41 @@ export function enemyEstimate(c: CampaignState): string[] {
     lines.push('Composition: unknown. The scouts saw smoke and spears, and guessed.');
   }
   return lines;
+}
+
+// The standing intelligence picture of the enemy's WHOLE war effort —
+// how many men they can still put in the field, and where. Accuracy
+// tracks your scouting; the number is always the scouts' number, not
+// the truth.
+export function warIntelligence(c: CampaignState): { lines: string[]; weakened: boolean } {
+  const era = ERAS[c.era];
+  const muster = armyMuster(era);
+  const rng = makeRng(c.seed).fork(3000 + c.day * 7 + c.operation * 31);
+  const errFrac = ((100 - c.intel) / 100) * 0.35 * rng.range(-1, 1);
+  const est = Math.max(0, Math.round(c.enemyWarStrength * (1 + errFrac)));
+  const round = era.armyScale >= 3 ? 500 : 100;
+  const shown = Math.round(est / round) * round;
+  const confidence =
+    c.intel > 70 ? 'The scouts are confident of the count.'
+    : c.intel > 40 ? 'The count is honest guesswork.'
+    : 'The number is a guess wearing a uniform.';
+  const lines: string[] = [];
+  lines.push(`${capitalizeFirst(c.enemyName)} can still put perhaps ${shown.toLocaleString()} men in the field this war. ${confidence}`);
+  const weakened = c.enemyWarStrength < muster * 0.85;
+  if (weakened) {
+    lines.push(c.enemyWarStrength < muster * 0.7
+      ? 'They are badly hurt. One more real defeat and they will not be able to field an army at all.'
+      : 'They are weakened — the losses you dealt them have not been made good.');
+  }
+  lines.push(c.distance > 0
+    ? `Their army lies ${c.distance} day${c.distance === 1 ? '' : 's'}' march ahead, gathering near ${c.placeName}.`
+    : `Their army stands near ${c.placeName}, within a half-day's march.`);
+  lines.push(doctrineRumor(c));
+  return { lines, weakened };
+}
+
+function capitalizeFirst(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 function clamp(n: number): number {
@@ -603,7 +654,7 @@ export function resolveEngagement(c: CampaignState, officerId: string, approach:
     addLog(c, 'event', `${who} ${isForage ? 'scatters the riders and brings the foragers in singing' : 'takes the crossing at a rush'}. ${foe.name} withdraws with his pride bleeding. The men look at ${shortName(officer.name)} differently tonight.`, true);
   } else if (margin > 0) {
     // costly success
-    const lost = rng.int(25, 60);
+    const lost = Math.round(rng.int(25, 60) * ERAS[c.era].armyScale);
     c.stragglers += lost;
     c.morale = clamp(c.morale + 2);
     if (isForage) c.food += 0.5;
@@ -612,7 +663,7 @@ export function resolveEngagement(c: CampaignState, officerId: string, approach:
     addLog(c, 'event', `${who} gets it done — at a price. Perhaps ${lost} men will not answer roll tomorrow, and ${foe.name} pulled back in good order, which is not the same as beaten.`, true);
   } else if (margin > -18) {
     // bloody repulse
-    const lost = rng.int(50, 110);
+    const lost = Math.round(rng.int(50, 110) * ERAS[c.era].armyScale);
     c.stragglers += lost;
     c.morale = clamp(c.morale - 5);
     if (isForage) c.food = Math.max(0, c.food - 1.5);
@@ -625,7 +676,7 @@ export function resolveEngagement(c: CampaignState, officerId: string, approach:
     addLog(c, 'event', `${who} is thrown back. ${foe.name} holds the ground and lets your men carry their wounded off unmolested — a courtesy that stings worse than arrows. ${shortName(officer.name)} will remember that name.`, true);
   } else {
     // disaster
-    const lost = rng.int(90, 170);
+    const lost = Math.round(rng.int(90, 170) * ERAS[c.era].armyScale);
     c.stragglers += lost;
     c.morale = clamp(c.morale - 9);
     c.cohesion = clamp(c.cohesion - 5);
@@ -908,14 +959,14 @@ export function nextOperation(c: CampaignState, survivors: Record<string, number
   c.veteranBlood = clamp((c.veteranBlood ?? 0) + 18);
   // replacements: half of losses are made good with green men
   c.unitStrength = {};
-  const FULL: Record<string, number> = {
-    'f-center': 1200, 'f-left': 800, 'f-right': 800,
-    'f-cavalry': 400, 'f-ranged': 500, 'f-reserve': 600,
-  };
-  for (const [id, full] of Object.entries(FULL)) {
-    const now = survivors[id] ?? full;
-    c.unitStrength[id] = Math.min(full, Math.round(now + (full - now) * 0.5));
+  for (const f of FORMATIONS) {
+    const full = formationMen(era, f);
+    const now = survivors[f.id] ?? full;
+    c.unitStrength[f.id] = Math.min(full, Math.round(now + (full - now) * 0.5));
   }
+  // the enemy raises men between operations too — but slowly, and never
+  // back from the dead
+  c.enemyWarStrength += Math.round(armyMuster(era) * 0.1);
   // officers: wounds either heal or harden; the dead are replaced by unknowns
   for (const o of c.officers) {
     o.playerEndorsed = false;

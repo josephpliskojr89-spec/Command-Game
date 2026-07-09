@@ -201,7 +201,8 @@ function UnitGlyph({ unit, x, y, color, ghost, identified, selected, label, subl
   unit: Unit; x: number; y: number; color: string; ghost: boolean; identified: boolean;
   selected: boolean; label?: string; sublabel?: string; onClick: () => void;
 }) {
-  const size = Math.max(14, Math.sqrt(Math.max(unit.men, 30)) * 1.5);
+  // capped so a Roman cohort of thousands doesn't swallow the map
+  const size = Math.max(14, Math.min(56, Math.sqrt(Math.max(unit.men, 30)) * 1.5));
   const opacity = ghost ? 0.35 : unit.status === 'routing' ? 0.6 : 1;
   const stroke =
     selected ? '#c9a44c'

@@ -3,7 +3,7 @@
 // Everything the player learns arrives as delayed, positional reports.
 
 import { makeRng, type Rng } from './rng.ts';
-import { ERAS, FORMATIONS, type Era } from './era.ts';
+import { ERAS, FORMATIONS, armyMuster, formationMen, type Era } from './era.ts';
 import {
   addGrudge, interpretOrder, observe, officerAutonomy, orderClarity,
   shortName, orderVerb, type InterpretContext,
@@ -131,8 +131,11 @@ export function setupBattle(
   assignments: Record<string, string>,
   personalCommand: string,
 ): BattleState {
-  const rng = makeRng(campaign.seed).fork(555);
+  // Salted by operation: a new field, new ground, new dice each battle.
+  // Must stay in sync with campaign.ts enemyFielded().
+  const rng = makeRng(campaign.seed + campaign.operation * 7919).fork(555);
   const era = ERAS[campaign.era];
+  const scale = era.armyScale;
   const terrain = makeTerrain(rng.fork(3));
 
   const blooded = campaign.veteranBlood ?? 0; // survivors of past fields
@@ -155,10 +158,10 @@ export function setupBattle(
   };
   const units: Unit[] = FORMATIONS.map((f) => {
     const carried = campaign.unitStrength?.[f.id];
-    const strength = carried ?? f.men;
+    const strength = carried ?? formationMen(era, f);
     const u = baseUnit(
       f.id, 'friend', era.unitNames[f.nameKey], f.cls,
-      Math.max(100, strength - Math.round(campaign.stragglers * (strength / 4300))),
+      Math.max(Math.round(100 * scale), strength - Math.round(campaign.stragglers * (strength / armyMuster(era)))),
       slots[f.id].x, slots[f.id].y, condition,
     );
     u.officerId = assignments[f.id];
@@ -167,9 +170,11 @@ export function setupBattle(
     return u;
   });
 
-  // Enemy army: strength matches what campaign.enemyEstimate() was built on.
-  // Later operations bring a warier, reinforced enemy.
-  const enemyTotal = 4200 + rng.int(-400, 600) + (campaign.operation - 1) * 150;
+  // Enemy army: what they choose to field this operation, capped by what
+  // remains of their WHOLE war effort. Destroy the pool and there is no
+  // next army — campaign.ts ends the war.
+  const enemyBase = Math.round((4200 + rng.int(-400, 600)) * scale) + (campaign.operation - 1) * Math.round(150 * scale);
+  const enemyTotal = Math.min(campaign.enemyWarStrength, enemyBase);
   const enemyCond = { morale: 62 + rng.int(-6, 8), fatigue: 20 + rng.int(0, 15), cohesion: 62 + rng.int(-8, 8) };
   const cavX = campaign.enemyCavSide === 'left' ? 160 : 1050; // truth, decided on the march
   const eSplit: [string, UnitClass, number, number, number][] = [
@@ -322,6 +327,7 @@ export function setupBattle(
     nextId: 1,
     weather: campaign.weather,
     seed: campaign.seed + campaign.operation * 7919, // new field, new dice
+    armyScale: scale,
     grudgesSighted: [],
   };
 
@@ -1349,7 +1355,7 @@ function routMove(bs: BattleState, u: Unit) {
   u.x += (u.x > MAP_W / 2 ? 1 : -1) * 0.3;
   u.fatigue = clamp(u.fatigue + 0.5);
   u.men = Math.max(0, u.men - Math.ceil(u.men * 0.002)); // shedding stragglers
-  if (u.y > MAP_H + 10 || u.y < -10 || u.men <= 50) {
+  if (u.y > MAP_H + 10 || u.y < -10 || u.men <= 50 * bs.armyScale) {
     u.routed = true;
     u.status = 'routing';
   }
@@ -1370,7 +1376,8 @@ function missileFire(bs: BattleState, rng: Rng) {
     if (fxT.concealed) power *= 0.5;
     const fxU = terrainAt(bs.terrain, u.x, u.y);
     if (fxU.elevated) power *= 1.2;
-    const kills = Math.max(0, Math.round(power / (target.armor * 0.4 + 3) + rng.range(-1, 2)));
+    const pace = Math.sqrt(bs.armyScale);
+    const kills = Math.max(0, Math.round((power / (target.armor * 0.4 + 3)) * pace + rng.range(-1, 2) * pace));
     target.men = Math.max(0, target.men - kills);
     u.killsDealt += kills;
     target.morale = clamp(target.morale - kills / Math.max(1, target.men) * 140 - 0.15);
@@ -1461,7 +1468,8 @@ function meleeCombat(bs: BattleState, campaign: CampaignState, rng: Rng) {
     if (flanked) power *= 1.5;
 
     const resilience = (foe.armor * 0.5 + 4) * fxF.defBonus;
-    const kills = Math.max(0, power / resilience * 5.2 + rng.range(-0.5, 0.8));
+    const pace = Math.sqrt(bs.armyScale);
+    const kills = Math.max(0, (power / resilience * 5.2 + rng.range(-0.5, 0.8)) * pace);
     const dead = Math.min(foe.men, kills);
     foe.men = Math.max(0, Math.round(foe.men - dead));
     u.killsDealt += dead;
@@ -1475,15 +1483,15 @@ function meleeCombat(bs: BattleState, campaign: CampaignState, rng: Rng) {
 
     // Ganging up is never free: the defender's line still bites the men
     // crowding its shoulders, even the ones it isn't facing.
-    if (foe.engagedWith && foe.engagedWith !== u.id && foe.men > 60) {
+    if (foe.engagedWith && foe.engagedWith !== u.id && foe.men > 60 * bs.armyScale) {
       const chip = (foe.melee * Math.sqrt(foe.men) * 0.011 * 0.45) / crowd;
-      const chipDead = Math.min(u.men, Math.max(0, (chip / (u.armor * 0.5 + 4)) * 5.2));
+      const chipDead = Math.min(u.men, Math.max(0, (chip / (u.armor * 0.5 + 4)) * 5.2 * pace));
       u.men = Math.max(0, Math.round(u.men - chipDead));
       foe.killsDealt += chipDead;
       u.morale = clamp(u.morale - (chipDead / Math.max(1, u.men)) * 200 - 0.1);
     }
 
-    if (foe.men <= 40) {
+    if (foe.men <= 40 * bs.armyScale) {
       foe.routed = true;
       foe.status = 'routing';
       report(bs, 'combat', bs.tick, foe, `${foe.name} have been destroyed as a fighting force.`, true);
@@ -1532,7 +1540,7 @@ function moraleAndRouts(bs: BattleState, campaign: CampaignState, rng: Rng) {
     if (u.status === 'routing') {
       // rally chance once clear of enemies
       const nearEnemy = bs.units.some((e) => e.side !== u.side && !e.routed && dist(u, e) < 170);
-      if (!nearEnemy && u.men > 80) {
+      if (!nearEnemy && u.men > 80 * bs.armyScale) {
         const officer = campaign.officers.find((o) => o.id === u.officerId);
         const rallyScore = (officer ? officer.traits.courage * 0.5 + officer.traits.competence * 0.3 : 30) + (u.playerLed ? 35 : 0);
         if (rng.chance(rallyScore / 2600)) {
@@ -1695,7 +1703,7 @@ export function lossFraction(bs: BattleState, side: 'friend' | 'enemy'): number 
 
 function sideBroken(bs: BattleState, side: 'friend' | 'enemy'): boolean {
   const us = bs.units.filter((u) => u.side === side);
-  const effective = us.filter((u) => !u.routed && u.status !== 'routing' && u.men > 60);
+  const effective = us.filter((u) => !u.routed && u.status !== 'routing' && u.men > 60 * bs.armyScale);
   return effective.length === 0 || lossFraction(bs, side) > 0.55;
 }
 

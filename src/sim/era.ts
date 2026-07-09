@@ -39,9 +39,13 @@ export interface Era {
   daughterNames: string[];
   villageNames: string[]; // where a woman might be from
   homeWord: string;       // what "home" is called: estate, hall, manor...
+  // Armies were not one size across a thousand years: a consular army
+  // dwarfed a Viking warband. Multiplies every formation's strength.
+  armyScale: number;
 }
 
 // One army skeleton shared by all eras. Six formations, six commands.
+// The men counts here are the BASE; each era multiplies by its armyScale.
 export const FORMATIONS: FormationTemplate[] = [
   { id: 'f-center', role: 'center', cls: 'infantry', men: 1200, nameKey: 'heavy' },
   { id: 'f-left', role: 'left', cls: 'infantry', men: 800, nameKey: 'line' },
@@ -50,6 +54,18 @@ export const FORMATIONS: FormationTemplate[] = [
   { id: 'f-ranged', role: 'ranged', cls: 'ranged', men: 500, nameKey: 'ranged' },
   { id: 'f-reserve', role: 'reserve', cls: 'infantry', men: 600, nameKey: 'reserve' },
 ];
+
+const BASE_MUSTER = FORMATIONS.reduce((s, f) => s + f.men, 0); // 4300
+
+// A formation's era-faithful strength.
+export function formationMen(era: Era, f: FormationTemplate): number {
+  return Math.round(f.men * era.armyScale);
+}
+
+// The full muster of the army for an era.
+export function armyMuster(era: Era): number {
+  return Math.round(BASE_MUSTER * era.armyScale);
+}
 
 export const ERAS: Record<EraId, Era> = {
   roman: {
@@ -97,6 +113,7 @@ export const ERAS: Record<EraId, Era> = {
     daughterNames: ['Cornelia', 'Tullia'],
     villageNames: ['Casinum', 'Aquilonia', 'the hill village of Trebula'],
     homeWord: 'your house on the Caelian',
+    armyScale: 4.0, // a consular army: two legions with allied wings, ~17,000 men
   },
   saxon: {
     id: 'saxon',
@@ -142,6 +159,7 @@ export const ERAS: Record<EraId, Era> = {
     daughterNames: ['Aethelflaed', 'Eadgifu'],
     villageNames: ['Cealcford', 'Buckelanbyrig', 'the mill village at Otterburne'],
     homeWord: 'your hall in the shire',
+    armyScale: 1.5, // a great fyrd with the hearth-troops, ~6,500 men
   },
   viking: {
     id: 'viking',
@@ -187,6 +205,7 @@ export const ERAS: Record<EraId, Era> = {
     daughterNames: ['Thora', 'Gudrun'],
     villageNames: ['the fishing steads at Meretun', 'Wealdham', 'the river hamlet of Sceapige'],
     homeWord: 'your steading across the sea',
+    armyScale: 0.7, // a large raiding host off the ships, ~3,000 men
   },
   norman: {
     id: 'norman',
@@ -233,6 +252,7 @@ export const ERAS: Record<EraId, Era> = {
     daughterNames: ['Adela', 'Mahaut'],
     villageNames: ['Fenstanton', 'the eel-fishers\u2019 village at Welle', 'Bourne'],
     homeWord: 'your manor in Normandy',
+    armyScale: 1.6, // a ducal host of knights, serjeants, and levies, ~7,000 men
   },
   medieval: {
     id: 'medieval',
@@ -279,6 +299,7 @@ export const ERAS: Record<EraId, Era> = {
     daughterNames: ['Blanche', 'Alice'],
     villageNames: ['Nether Caldwell', 'the weavers\u2019 village at Stokeham', 'Birchden'],
     homeWord: 'your castle at Harfield',
+    armyScale: 2.1, // a royal field army of the high middle ages, ~9,000 men
   },
 };
 

@@ -3,7 +3,7 @@ import { ERAS } from '../sim/era.ts';
 import { shortName } from '../sim/officer.ts';
 import { resolveWord } from '../sim/personal.ts';
 import type { CampaignState, Officer } from '../sim/types.ts';
-import type { EngagementApproach, MarchChoices } from '../sim/campaign.ts';
+import { warIntelligence, type EngagementApproach, type MarchChoices } from '../sim/campaign.ts';
 import { actions } from '../store.ts';
 import { OfficerCard, OfficerDossier, OfficerPickButton, ReportLog, StatBar } from './shared.tsx';
 
@@ -120,6 +120,8 @@ export function CampaignScreen({ campaign }: { campaign: CampaignState }) {
 
         <div className="col-side">
           <HearthPanel campaign={campaign} />
+          <WarIntelPanel campaign={campaign} />
+          <WarRecordPanel campaign={campaign} />
           <div className="panel">
             <h3>Dispatches &amp; The March</h3>
             <ReportLog reports={campaign.log} formatWhen={(d) => `Day ${d}`} />
@@ -263,6 +265,49 @@ function HearthPanel({ campaign }: { campaign: CampaignState }) {
         </p>
       ))}
       <p className="hint" style={{ marginTop: 8 }}>{resolveWord(p)}</p>
+    </div>
+  );
+}
+
+// The scouts' running picture of the enemy's whole war effort: what they
+// can still field, where they are, and how their commander fights.
+function WarIntelPanel({ campaign }: { campaign: CampaignState }) {
+  const intel = warIntelligence(campaign);
+  return (
+    <div className="panel">
+      <h3>War Intelligence</h3>
+      {intel.lines.map((l, i) => (
+        <p key={i} style={{ margin: '5px 0', fontSize: 13, color: intel.weakened && i === 1 ? 'var(--gold)' : undefined }}>
+          {l}
+        </p>
+      ))}
+      <div className="hint" style={{ marginTop: 6 }}>
+        Numbers are the scouts' numbers. Scout wider, and they get closer to the truth.
+      </div>
+    </div>
+  );
+}
+
+// Every battle of this war, and what it cost.
+function WarRecordPanel({ campaign }: { campaign: CampaignState }) {
+  if (campaign.warRecord.length === 0) return null;
+  return (
+    <div className="panel">
+      <h3>The War So Far</h3>
+      {campaign.warRecord.map((r) => (
+        <div key={r.operation} className="war-record-entry">
+          <div className="wr-head">
+            <span className="wr-op">Op. {r.operation}</span>
+            <span className={`wr-outcome ${r.outcome.includes('victory') ? 'won' : r.outcome === 'orderly-withdrawal' ? 'drawn' : 'lost'}`}>
+              {r.outcomeTitle}
+            </span>
+          </div>
+          <div className="wr-detail">
+            The battle of {r.place}, day {r.day} — we lost {r.friendlyLosses.toLocaleString()};
+            they lost ~{r.enemyLosses.toLocaleString()}.
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
